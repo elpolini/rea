@@ -191,6 +191,14 @@ serial, 128-bit file ID, final handle path, requested path, and size. Reparse
 paths, alternate streams, ambiguous coordinates, UNC paths, and other
 filesystems are rejected with the actual constraint.
 
+Before admission, REA resolves drive paths once, as Win32 does. In the
+selected target and the inherited temporary directory (`TEMP`/`TMP`), forward
+slashes, repeated separators, and `.` or `..` components name the same file as
+the single-backslash spelling; a relative target resolves against the working
+directory. REA does not rewrite components ending in a dot or space, alternate
+streams, UNC paths, or a relative temporary directory into a local drive path;
+admission still rejects them.
+
 The snapshot streams from the admitted source handle on a background worker.
 Its digest must match the parsed target digest. Ghidra imports that private,
 immutable snapshot, and the bridge requires the imported program SHA-256 to

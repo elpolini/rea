@@ -55,6 +55,17 @@ export class WindowsSnapshotCancelledError extends Error {
 const RUNTIME_CLEANUP_ATTEMPTS = 10;
 const RUNTIME_CLEANUP_RETRY_DELAY_MS = 100;
 
+/**
+ * Spell a fully qualified DOS drive parent the way Win32 resolves it. Parents
+ * such as `os.tmpdir()` arrive with the ambient TEMP spelling, and native
+ * admission walks components literally: it rejects the repeated separators
+ * and `.` or `..` components that Win32 resolves lexically to the same
+ * directory. Every other namespace keeps its spelling for native admission to
+ * decide, so trailing dots, relative and UNC parents remain rejected.
+ */
+export const windowsRuntimeParent = (parent: string): string =>
+  /^[A-Za-z]:[\\/]/u.test(parent) ? win32.resolve(parent) : parent;
+
 /** Retain private DACL and path handles until native recursive cleanup settles. */
 export class WindowsPrivateRuntime {
   // One native snapshot can own cancellation for this runtime at a time. A
@@ -73,7 +84,10 @@ export class WindowsPrivateRuntime {
     const authority = requireWindowsNativeAuthority();
     let observed: unknown;
     try {
-      observed = authority.call("runtime_create", [parent, prefix]);
+      observed = authority.call("runtime_create", [
+        windowsRuntimeParent(parent),
+        prefix,
+      ]);
     } catch (cause: unknown) {
       if (
         cause instanceof Error &&

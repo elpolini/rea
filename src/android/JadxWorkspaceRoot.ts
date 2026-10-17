@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 import { PrivateRuntimeRoot } from "../process/PrivateRuntimeRoot.js";
+import { windowsRuntimeParent } from "../windows/WindowsPrivateRuntime.js";
 
 /** Match the native owner's ordinary spelling only for extended local drive paths. */
 const localDrivePath = (path: string): string =>
@@ -145,7 +146,7 @@ class WindowsJadxWorkspaceRoot implements JadxWorkspaceRoot {
       const observation = readySchema.parse(JSON.parse(line));
       if (
         win32.dirname(localDrivePath(observation.path)).toLowerCase() !==
-          localDrivePath(win32.resolve(parent)).toLowerCase() ||
+          localDrivePath(windowsRuntimeParent(parent)).toLowerCase() ||
         !/^rea-android-[a-f0-9]{32}$/u.test(win32.basename(observation.path))
       )
         throw new Error(

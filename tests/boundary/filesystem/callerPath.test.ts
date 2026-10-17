@@ -39,3 +39,38 @@ it("uses lexical resolution on Windows, where it is exact", () => {
   );
   expect(absoluteCallerPath("D:\\x\\..\\y", win32)).toBe("D:\\y");
 });
+
+// Windows native admission walks components literally and rejects empty
+// ones, so every spelling Win32 resolves to one drive path must reach it as
+// that single spelling (#4707).
+it("resolves each Windows drive spelling of a target to one path", () => {
+  const win32 = { cwd: "C:\\Users\\u", platform: "win32" } as const;
+  for (const spelling of [
+    "C:\\Users\\u\\repro\\h.exe",
+    "C:/Users/u/repro/h.exe",
+    "C:\\\\Users\\\\u\\\\repro\\\\h.exe",
+    "C://Users//u//repro//h.exe",
+    "C:/Users\\u//repro\\\\h.exe",
+    "repro//h.exe",
+    ".\\repro\\.\\h.exe",
+  ])
+    expect(absoluteCallerPath(spelling, win32), spelling).toBe(
+      "C:\\Users\\u\\repro\\h.exe",
+    );
+});
+
+it("keeps Windows namespaces and ambiguous components for native admission", () => {
+  const win32 = { cwd: "C:\\work", platform: "win32" } as const;
+  expect(absoluteCallerPath("\\\\server\\share\\h.exe", win32)).toBe(
+    "\\\\server\\share\\h.exe",
+  );
+  expect(absoluteCallerPath("//server/share/h.exe", win32)).toBe(
+    "\\\\server\\share\\h.exe",
+  );
+  expect(absoluteCallerPath("C:\\work\\h.exe.", win32)).toBe(
+    "C:\\work\\h.exe.",
+  );
+  expect(absoluteCallerPath("C:/work/h.exe::$DATA", win32)).toBe(
+    "C:\\work\\h.exe::$DATA",
+  );
+});
