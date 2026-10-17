@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { access, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, it } from "vitest";
 
 import { ApktoolResourceAnalysisService } from "./ApktoolResourceAnalysisService.js";
@@ -6,6 +9,12 @@ import { createAnalysisExecution } from "../AnalysisProvider.js";
 import { AnalysisCancelledError } from "../../domain/analysisErrorCore.js";
 import { parseEvidence } from "../../domain/evidence.js";
 import { ok } from "../../domain/result.js";
+import { toolContract } from "../../contracts/toolContracts.js";
+import {
+  splitApkBytes,
+  writeSplitSet,
+} from "../../../tests/fixtures/android/splitApk.js";
+import { createTestTempDirectory } from "../../../tests/fixtures/temporaryDirectory.js";
 
 const identity = { id: "apktool", name: "Apktool", version: null };
 
@@ -116,4 +125,136 @@ it("preserves a cancellation that races a completed observation", async () => {
     include_strings: true,
   });
   expect(retained.confidence).toBe("observed");
+});
+
+const decodeResult = (path: string, bytes: number, sha256: string) => ({
+  client: {
+    command: "/usr/bin/apktool",
+    command_source: "path",
+    apktool_version: "2.7.0-dirty",
+  },
+  target: { path, bytes, sha256 },
+  metadata: {
+    version_name: "1.0",
+    version_code: "3",
+    min_sdk_version: "24",
+    target_sdk_version: "34",
+    package_name: "com.example.app",
+  },
+  manifest: "<manifest/>",
+  strings: [],
+  locale: null,
+  locales: [],
+  decoded_file_count: 2,
+  coverage: "complete",
+});
+
+const digest = (bytes: Uint8Array): string =>
+  createHash("sha256").update(bytes).digest("hex");
+
+/** A decoding port that reports the digest of the bytes it was given. */
+const decodingPort = (
+  calls: { readonly path: string; readonly locale?: string | undefined }[],
+  reported: (bytes: Buffer) => string = digest,
+): ApktoolResourceAnalysisPort => ({
+  async inspectAvailability() {
+    throw new Error("must not probe");
+  },
+  async close() {},
+  async execute(request) {
+    if (request.operation !== "decode_android_resources")
+      throw new Error("unexpected operation");
+    calls.push({ path: request.input.path, locale: request.input.locale });
+    const bytes = await readFile(request.input.path);
+    return ok(
+      createAnalysisExecution(
+        decodeResult(request.input.path, bytes.length, reported(bytes)),
+        identity,
+        { limitations: ["Decoding skips smali (--no-src)"] },
+      ),
+    );
+  },
+});
+
+const writeContainer = async () => {
+  const root = await createTestTempDirectory("rea-apktool-container-");
+  const base = await splitApkBytes({ packageName: "com.example.app" });
+  const split = await splitApkBytes({
+    packageName: "com.example.app",
+    split: "config.de",
+  });
+  const path = join(root, "app.xapk");
+  await writeSplitSet(
+    path,
+    { "base.apk": base, "config.de.apk": split },
+    "zip",
+    {
+      "manifest.json": Buffer.from("{}"),
+    },
+  );
+  return { path, base, container: await readFile(path) };
+};
+
+it("decodes a split container's base APK and reports the selected container", async () => {
+  const { path, base, container } = await writeContainer();
+  const calls: { path: string; locale?: string | undefined }[] = [];
+  const service = new ApktoolResourceAnalysisService(decodingPort(calls));
+  const result = await service.execute("decode_android_resources", {
+    path,
+    locale: "de",
+  });
+  if (!result.ok) throw result.error;
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.path).not.toBe(path);
+  expect(calls[0]!.locale).toBe("de");
+  await expect(access(calls[0]!.path)).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  const evidence = parseEvidence(result.value);
+  expect(evidence.parameters).toEqual({
+    path,
+    include_strings: true,
+    locale: "de",
+  });
+  expect(evidence.normalized_result).toMatchObject({
+    target: { path, bytes: container.length, sha256: digest(container) },
+    input_container: {
+      path,
+      kind: "zip",
+      base: { entry: "base.apk", sha256: digest(base) },
+      splits: [{ entry: "config.de.apk", split_name: "config.de" }],
+      other_entry_count: 1,
+    },
+  });
+  // Apktool Evidence keeps its identity in target, as for a standalone APK.
+  expect(evidence.subject).toBeNull();
+  expect(evidence.limitations).toEqual([
+    "Artifact identity is unavailable for this observation.",
+    "Decoding skips smali (--no-src)",
+    expect.stringMatching(/^Analyzed only base APK base\.apk/u),
+    "1 non-APK container entry was not analyzed.",
+    expect.stringContaining("signatures"),
+  ]);
+  expect(
+    toolContract("decode_android_resources").outputSchema.safeParse(evidence)
+      .success,
+  ).toBe(true);
+  await service.inputs.close();
+});
+
+it("refuses a decode whose bytes differ from the admitted base", async () => {
+  const { path } = await writeContainer();
+  const calls: { path: string }[] = [];
+  const service = new ApktoolResourceAnalysisService(
+    decodingPort(calls, () => "0".repeat(64)),
+  );
+  const result = await service.execute("decode_android_resources", { path });
+  expect(result).toMatchObject({
+    ok: false,
+    error: { _tag: "AnalysisArtifactChangedError" },
+  });
+  await expect(access(calls[0]!.path)).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await service.inputs.close();
 });

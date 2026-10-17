@@ -157,6 +157,69 @@ instructions into field declarations, leaving an empty or incomplete method
 body. The selected method's disassembly preserves those instructions and retains
 the same source byte limit and explicit truncation reporting.
 
+## Split APK sets
+
+Every Android `path` can also name a split APK set: a ZIP container such as
+`.apks` (`base.apk` plus `split_*.apk`) or `.xapk` (`manifest.json` plus APKs),
+or a directory that holds a base APK and its splits, such as the package
+directory `pull_adb_package` writes. REA classifies a ZIP by its entries, not
+its suffix: a ZIP with a root `AndroidManifest.xml` is a standalone APK and is
+admitted unchanged, while a ZIP without one that has `.apk` entries is a split
+set. A directory is scanned without recursion.
+
+```sh
+rea inspect-android-package /path/app.apks
+rea search-android-classes /path/app.xapk MainActivity
+rea inspect-android-package /tmp/acq/com.whatsapp
+```
+
+REA reads each member's compiled `AndroidManifest.xml` and selects as base the
+only member whose root `<manifest>` declares no `split` name; file names are
+never consulted, and an empty `split` counts as absent, as in Android. A set
+with no unsplit member, or with several (such as a bundletool APK set that also
+carries standalone APKs), is refused as an input error that names the members,
+and so is a member whose manifest cannot be read. JADX then analyzes the base
+exactly as it analyzes a standalone APK; the splits are not analyzed.
+
+Results add `normalized_result.input_container`:
+
+- `path`, `kind` (`zip` or `directory`) and, for a ZIP, its `sha256` and
+  `bytes`.
+- `base` and `splits`, each with `entry` (ZIP member path or file name),
+  `bytes`, `sha256` and the declared `package_name`, `split_name`,
+  `config_for_split`, `is_feature_split` (`null` when undeclared) and
+  `version_code`. `config_qualifier` is the text after `config.` in the declared
+  split name (bundletool naming); it is not read from the split's resource
+  table.
+- `other_entry_count`: non-APK entries such as `manifest.json`, icons or OBB
+  files, which are not analyzed.
+
+For a ZIP container the Evidence subject is the container file, so its digest
+matches the file at `local_path`; `input_container.base.sha256` identifies the
+analyzed APK. For a directory the subject is the base APK file inside it.
+Limitations state that the splits were not analyzed and name feature splits,
+split packages that differ from the base and the count of non-APK entries.
+Split code, resources and native libraries are absent from the result; APK
+signatures and install compatibility are not verified. A result without
+`input_container` came from a standalone APK.
+
+ZIP containers use REA's hardened ZIP reader: CRC-checked members,
+overlapping-entry rejection, a 16 MiB central-directory read budget and the
+shared decompression budget (500 times the archive size, at least 256 MiB),
+checked against declared sizes before anything is extracted. At most 512 APK
+members are admitted, a directory scan stops after 10,000 entries, each member
+manifest is limited to 8 MiB and each reported package, split or version
+declaration to 1,024 UTF-16 code units. Member names appear only in reports and
+never select output paths; absolute and `..` names are refused. ZIP members are
+extracted and hashed into a private REA-owned workspace that is removed when
+the operation completes, fails or is cancelled; directory members are read in
+place from admitted descriptors. A container or member that changes while it
+is read is refused. If workspace removal cannot be confirmed, the result names
+the retained path, later Android admissions retry it first and are refused
+while it remains, and CLI or server shutdown retries it again. The retained
+JADX session is keyed by the analyzed APK's digest, so repeated requests
+against one container reuse the loaded engine.
+
 ## Interpret the result
 
 - Package inspection retains decoded manifest XML, summary declarations,
@@ -201,11 +264,13 @@ the same source byte limit and explicit truncation reporting.
 
 If a later step fails, the error's `details.partial_observation` retains the
 selected and resolved APK paths, digest, observed provider identity and versions,
-and each upstream request and reply collected before the failure. Failed replies
+and each upstream request and reply collected before the failure. For a split
+set the resolved path is REA's private extraction of the base, which is removed
+once the operation ends. Failed replies
 remain available even when their payload cannot be interpreted. Cancellation
 also stops target hashing before provider admission.
 
-These operations do not execute the APK or provide split APK/AAB handling,
+These operations do not execute the APK or analyze split APK contents or AABs,
 signature validation, full resource-table semantics, native-library analysis or
 Android runtime capture. An `.aab` suffix is a ZIP archive, not an APK, so
 Android tools and the application graph do not treat it as a standalone APK.

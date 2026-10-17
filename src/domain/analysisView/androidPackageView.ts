@@ -1,7 +1,7 @@
 import { analysisViewInputError } from "./analysisViewErrors.js";
 import { z } from "zod";
 import type { AnalysisError } from "../analysisErrorBase.js";
-import { androidResultSchemas } from "../android/androidAnalysis.js";
+import { androidEvidenceResultSchemas } from "../android/androidAnalysis.js";
 import { err, ok, type Result } from "../result.js";
 import { parseAnalysisViewResult } from "./analysisViewParent.js";
 import type {
@@ -12,7 +12,7 @@ import type {
 import { completeWithinViewCoverage } from "./analysisViewCoverage.js";
 import { analysisTextPage } from "./analysisViewText.js";
 
-const packageSchema = androidResultSchemas.inspect_android_package;
+const packageSchema = androidEvidenceResultSchemas.inspect_android_package;
 
 /** All package declarations remain inline; decoded manifest text stays retained. */
 export const androidPackageSummarySchema = packageSchema.extend({

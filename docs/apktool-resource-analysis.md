@@ -56,10 +56,34 @@ table), and `include_strings` (default true). Regional locales such as `pt-BR`
 select Android's `values-pt-rBR`; Android qualifiers such as `pt-rBR` and
 `b+zh+Hans+CN` may also be supplied directly.
 
+## Split APK sets
+
+`path` may also name a split APK set: an `.apks` or `.xapk` ZIP container, or a
+directory holding a base APK and its splits. Resolution, bounds and workspace
+ownership are shared with the JADX family; see
+[split APK sets](android-analysis.md#split-apk-sets). Apktool decodes only the
+base APK, the only member whose manifest declares no split name.
+
+```sh
+rea decode-android-resources /targets/app.apks
+rea decode-android-resources /targets/app.xapk --locale de
+```
+
+The result adds `input_container` with the container and each split's file
+name, size, SHA-256 and declared split facts. `target` names the file REA
+admitted: the ZIP container itself (its path, size and SHA-256), or the base APK
+file inside a selected directory. `input_container.base.sha256` is the digest
+of the decoded APK; REA refuses the result if the bytes Apktool decoded differ
+from it. Language and density splits (`config.de`, `config.xxhdpi`) are not
+decoded, so `locales` and the projected strings cover the base APK only; a
+locale that exists only in a split reports a missing table.
+
 ## Interpret the result
 
 - **An owned APK snapshot is digested and decoded.** `target.sha256` and
-  `target.bytes` bind the observation to the exact APK that was decoded.
+  `target.bytes` bind the observation to the exact APK that was decoded. For a
+  split APK set they identify the admitted container or base file, and
+  `input_container.base.sha256` binds the decoded base APK.
 - **Metadata comes from apktool.yml as apktool printed it.** Version codes
   keep their own spelling (`'7'` versus `7`); `package_name` is read from
   the decoded manifest, not inferred.

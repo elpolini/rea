@@ -8,6 +8,7 @@ import type { Logger } from "pino";
 import type { CliInstance } from "./types.js";
 import { withCommandCancellation } from "./commandCancellation.js";
 import { finishAnalysisCommand } from "./finishAnalysisCommand.js";
+import { closeAndroidAnalysis } from "./closeAndroidAnalysis.js";
 
 /** Expose the same explicit APK requests through one-shot CLI commands. */
 export const registerAndroidCommands = (
@@ -17,18 +18,19 @@ export const registerAndroidCommands = (
 ): void => {
   const provider = createAndroidAnalysisProvider(environment);
   const service = new AndroidAnalysisService(provider);
+  const close = () => closeAndroidAnalysis(service.inputs, provider);
   const execute = (name: string, operation: AndroidOperation, input: unknown) =>
     withCommandCancellation((signal) =>
       logCliCommand(logger, name, () =>
         finishAnalysisCommand(
           () => service.execute(operation, input, { signal }),
-          { close: () => provider.close() },
+          { close },
           "jadx",
           operation,
         ),
       ),
     );
-  const path = z.string().describe("Local standalone APK path");
+  const path = z.string().describe("Local APK, split APK set or APK directory");
   const className = z.string().describe("Exact fully qualified class name");
   cli.command(CLI_COMMANDS.inspectAndroidPackage, {
     description:

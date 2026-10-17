@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { localPathStringSchema } from "../localPath.js";
 import { digestSchema } from "../digests.js";
+import { androidInputContainerSchema } from "../android/androidInputContainer.js";
 
 const MAX_STRINGS = 2_000;
 const ANDROID_NON_LOCALE_QUALIFIERS = new Set([
@@ -38,7 +39,9 @@ export const androidLocaleQualifierSchema = localeQualifierSchema;
 export const apktoolInputSchemas = {
   inspect_apktool_client: z.strictObject({}),
   decode_android_resources: z.strictObject({
-    path: localPathStringSchema.describe("Local APK file to decode"),
+    path: localPathStringSchema.describe(
+      "Local APK, split APK container (.apks/.xapk ZIP) or directory of base and split APKs",
+    ),
     include_strings: z
       .boolean()
       .default(true)
@@ -190,6 +193,7 @@ export const apktoolResultSchemas = {
       bytes: z.number().int().nonnegative(),
       sha256: digestSchema,
     }),
+    input_container: androidInputContainerSchema.optional(),
     metadata: z.strictObject({
       version_name: z.string().nullable(),
       version_code: z

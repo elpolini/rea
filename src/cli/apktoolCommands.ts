@@ -12,6 +12,7 @@ import type { Logger } from "pino";
 import type { CliInstance } from "./types.js";
 import { withCommandCancellation } from "./commandCancellation.js";
 import { finishAnalysisCommand } from "./finishAnalysisCommand.js";
+import { closeAndroidAnalysis } from "./closeAndroidAnalysis.js";
 
 /** Expose the same explicit Apktool requests through one-shot CLI commands. */
 export const registerApktoolCommands = (
@@ -23,12 +24,13 @@ export const registerApktoolCommands = (
   ),
 ): void => {
   const service = new ApktoolResourceAnalysisService(provider);
+  const close = () => closeAndroidAnalysis(service.inputs, provider);
   const execute = (name: string, operation: ApktoolOperation, input: unknown) =>
     withCommandCancellation((signal) =>
       logCliCommand(logger, name, () =>
         finishAnalysisCommand(
           () => service.execute(operation, input, { signal }),
-          { close: () => provider.close() },
+          { close },
           "apktool",
           operation,
         ),
@@ -46,7 +48,10 @@ export const registerApktoolCommands = (
     description:
       "Decode one APK's manifest, metadata, and string resources with apktool",
     args: z.object({
-      path: z.string().min(1).describe("Local APK file to decode"),
+      path: z
+        .string()
+        .min(1)
+        .describe("Local APK, split APK set or APK directory"),
     }),
     // The locale grammar and the string-projection default belong to the
     // apktool input owner. Read them from that schema rather than restating a

@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { localPathStringSchema } from "../localPath.js";
+import { androidInputContainerSchema } from "./androidInputContainer.js";
 
 const target = {
   path: localPathStringSchema.describe(
-    "Local APK path; the target is never executed",
+    "Local APK, split APK container (.apks/.xapk ZIP) or directory of base and split APKs; never executed",
   ),
 };
 const classTarget = {
@@ -206,4 +207,25 @@ export const androidResultSchemas = {
     coverage: z.literal("complete"),
     reference_unit: z.literal("using_node"),
   }),
+} as const;
+
+const inputContainer = {
+  input_container: androidInputContainerSchema.optional(),
+};
+
+/**
+ * Delivered Evidence results. A provider observes one APK; when the caller
+ * selected a split container, the shared workflow adds the resolved container.
+ */
+export const androidEvidenceResultSchemas = {
+  inspect_android_package:
+    androidResultSchemas.inspect_android_package.extend(inputContainer),
+  search_android_classes:
+    androidResultSchemas.search_android_classes.extend(inputContainer),
+  inspect_android_class:
+    androidResultSchemas.inspect_android_class.extend(inputContainer),
+  inspect_android_method:
+    androidResultSchemas.inspect_android_method.extend(inputContainer),
+  trace_android_references:
+    androidResultSchemas.trace_android_references.extend(inputContainer),
 } as const;

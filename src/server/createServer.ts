@@ -98,6 +98,7 @@ import { registerFlutterTools } from "./registerFlutterTools.js";
 import { registerJebTools } from "./registerJebTools.js";
 import { registerAdbTools } from "./registerAdbTools.js";
 import { AndroidAnalysisService } from "../application/android/AndroidAnalysisService.js";
+import { AndroidInputContainerAdmission } from "../application/android/AndroidInputContainerAdmission.js";
 import { JebAnalysisService } from "../application/jeb/JebAnalysisService.js";
 import type { AndroidAnalysisPort } from "../application/android/AndroidAnalysisPort.js";
 import type { ApktoolResourceAnalysisPort } from "../application/apktool/ApktoolResourceAnalysisPort.js";
@@ -365,6 +366,8 @@ export const createServer = (
   const apktool =
     options.apktoolAnalysis ??
     createApktoolResourceAnalysisProvider(environment);
+  // Split APK container extraction is shared by the JADX and Apktool families.
+  const androidInputs = new AndroidInputContainerAdmission();
   const jeb = options.jebAnalysis ?? createJebAnalysisProvider(environment);
   const adbDevice =
     options.adbDeviceAnalysis ?? createAdbDeviceAnalysisProvider(environment);
@@ -375,6 +378,7 @@ export const createServer = (
   const closeProviders = (): Promise<void> => {
     providerClose ??= Promise.allSettled([
       android.close(),
+      androidInputs.close(),
       cutter.close(),
       fridaInstrumentation.closeAll(),
       wasmArtifact.close(),
@@ -449,6 +453,7 @@ export const createServer = (
     recordEvidenceWithUnknown,
     withAdmittedAnalysis: analysisAdmission,
     artifactResources,
+    androidInputs,
     goBinary,
     rustBinary,
     peResources,
@@ -580,7 +585,7 @@ export const createServer = (
   );
   registerApktoolTools(
     server,
-    new ApktoolResourceAnalysisService(apktool),
+    new ApktoolResourceAnalysisService(apktool, androidInputs),
     toolLogger,
     recordEvidence,
     analysisAdmission,
@@ -648,6 +653,7 @@ const registerConfiguredAnalysisTools = (
     evidenceById,
     recordEvidence,
     withAdmittedAnalysis,
+    androidInputs,
     goBinary,
     rustBinary,
     peResources,
@@ -662,7 +668,7 @@ const registerConfiguredAnalysisTools = (
 ): void => {
   registerAndroidTools(
     server,
-    new AndroidAnalysisService(android),
+    new AndroidAnalysisService(android, androidInputs),
     toolLogger,
     recordEvidence,
     withAdmittedAnalysis,
@@ -821,6 +827,7 @@ interface ServerToolContext extends ReturnType<typeof createSessionRecorders> {
   readonly peResources: PeResourcesService;
   readonly webNetworkCapture: WebNetworkCaptureService;
   readonly artifactResources: ArtifactResourceScope;
+  readonly androidInputs: AndroidInputContainerAdmission;
   readonly server: EvidenceMcpServer;
   readonly session: BinarySessionPort | undefined;
   readonly options: CreateServerOptions;

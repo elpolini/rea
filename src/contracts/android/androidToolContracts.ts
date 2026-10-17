@@ -1,8 +1,8 @@
 import { z } from "zod";
 import {
+  androidEvidenceResultSchemas,
   androidInputSchemas,
   androidPackageInspectionInputSchema,
-  androidResultSchemas,
 } from "../../domain/android/androidAnalysis.js";
 import { androidPackageSummaryViewResultSchema } from "../../domain/analysisView/analysisView.js";
 import type { ToolContract } from "../toolContractTypes.js";
@@ -20,7 +20,7 @@ export const ANDROID_TOOL_CONTRACTS = [
     inputSchema: androidPackageInspectionInputSchema,
     outputSchema: evidenceResultOf(
       z.union([
-        androidResultSchemas.inspect_android_package,
+        androidEvidenceResultSchemas.inspect_android_package,
         androidPackageSummaryViewResultSchema,
       ]),
     ),
@@ -39,7 +39,9 @@ export const ANDROID_TOOL_CONTRACTS = [
       "Search complete decompiler class-name rows in an explicit local APK by case-sensitive substring. Empty query inventories all rows. Repeated names remain repeated and appear in duplicate_names; the provider accepts only class names for lookup, so these rows do not identify which same-name class node a later lookup selects. Retains artifact and engine identity; no APK execution.",
     kind: "android-provider",
     inputSchema: androidInputSchemas.search_android_classes,
-    outputSchema: evidenceResultOf(androidResultSchemas.search_android_classes),
+    outputSchema: evidenceResultOf(
+      androidEvidenceResultSchemas.search_android_classes,
+    ),
     examples: [
       {
         title: "Find activity classes",
@@ -54,7 +56,9 @@ export const ANDROID_TOOL_CONTRACTS = [
       "Inspect one exact Android class's parsed methods, fields and inner classes, including synthetic members. Returns display signatures and exact DEX prototypes without generating source. A prototype is not a complete raw method ID; overload indices remain consistent within the artifact and engine session.",
     kind: "android-provider",
     inputSchema: androidInputSchemas.inspect_android_class,
-    outputSchema: evidenceResultOf(androidResultSchemas.inspect_android_class),
+    outputSchema: evidenceResultOf(
+      androidEvidenceResultSchemas.inspect_android_class,
+    ),
     examples: [
       {
         title: "Inspect a class",
@@ -69,7 +73,9 @@ export const ANDROID_TOOL_CONTRACTS = [
       "Decompile one Android method with smali fallback. Requires explicit overload_index when multiple methods share a name. Reports its DEX prototype, representation, fallback markers and source truncation; display signatures may be aliases.",
     kind: "android-provider",
     inputSchema: androidInputSchemas.inspect_android_method,
-    outputSchema: evidenceResultOf(androidResultSchemas.inspect_android_method),
+    outputSchema: evidenceResultOf(
+      androidEvidenceResultSchemas.inspect_android_method,
+    ),
     examples: [
       {
         title: "Decompile a method",
@@ -89,7 +95,7 @@ export const ANDROID_TOOL_CONTRACTS = [
     kind: "android-provider",
     inputSchema: androidInputSchemas.trace_android_references,
     outputSchema: evidenceResultOf(
-      androidResultSchemas.trace_android_references,
+      androidEvidenceResultSchemas.trace_android_references,
     ),
     examples: [
       {

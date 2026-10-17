@@ -13,6 +13,12 @@ own APK path and explicit selectors; do not open a native session first.
 Choose an `overload_index` from the class inventory when methods are ambiguous
 instead of guessing.
 
+A split APK set can be the path: an `.apks` or `.xapk` ZIP, or a directory of
+base and split APKs such as `pull_adb_package` output. REA analyzes the one
+member whose manifest declares no split name and reports every split in
+`input_container`; split code and resources stay unanalyzed. An ambiguous set
+is refused; pass the intended APK file instead.
+
 The provider requires a separately supplied headless JADX MCP JAR 0.7.1 and
 Java 17 or newer. `REA_JADX_MCP_JAR` selects the absolute JAR path; `JAVA_HOME`
 can select Java. REA setup does not install or configure that JAR, and doctor

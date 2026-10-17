@@ -513,8 +513,10 @@ export class JadxProvider implements AndroidAnalysisPort {
       }
       if (targetHash !== target.sha256)
         throw androidTargetChanged(request.operation, target.path);
+      // The admitted bytes select the retained snapshot, not their path: a
+      // split container's base APK is re-extracted to a new private path for
+      // each request, and every request still carries its own subject.
       const key = JSON.stringify({
-        path: target.path,
         sha256: target.sha256,
         jar: configuration.jar,
         jarHash,
