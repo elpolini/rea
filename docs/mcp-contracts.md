@@ -363,13 +363,35 @@ requirements, and mode facts inline with the grouped tool names. The optional
 inputs `expected_package_version`, `expected_catalog_digest`, and
 `expected_server_path` compare the live session with the caller's expectations.
 
+The complete result can exceed some clients' tool-result limits. For
+orientation, call `binary_session` with `{"detail": "summary"}`; omitting
+`detail` or passing `"complete"` keeps the complete result. A summary has
+`detail: "summary"` and is derived only from the facts the complete result reports
+at the same moment. It keeps `open` and the active target fields,
+`cleanup_pending`, analysis activity and provider operation health. It replaces
+the analysis profile with `analysis_profile_digest`, provider lineage with the
+verified snapshot count and each unavailable observation's provider and reason,
+and each provider candidate with its
+availability, target support and operation counts. Capabilities and
+`tool_availability` become counts plus only the unavailable entries, grouped by
+reason and remediation; tools that are available but degraded list their
+unavailable modes and missing optional client features. `server_identity` keeps
+package, server start and command path, client, skill, catalog counts with the
+combined digest, and alignment. Request the complete result for diagnostics,
+effects, limitations, candidate capability sets, SDK and protocol features, or
+every available tool's facts. Detail selects delivery only; it does not change
+the session.
+
 `server_identity.catalog` contains catalog counts and schema digests. Grouped
 tool availability carries the name set and current per-tool facts; `tools/list`
 is the canonical source for complete tool definitions, including input and
 output schemas. Clients that previously read `server_identity.catalog.tools`
 should expand `tool_availability.groups` and use `tools/list` for schemas. The
 same catalog identity summary is returned by CLI `capabilities` and `providers`;
-MCP tool definitions remain available through `tools/list`.
+MCP tool definitions remain available through `tools/list`. Both CLI commands
+accept `--detail complete|summary` with the same default and projection; they report
+no tool availability or client features because a one-shot CLI process has no
+MCP client.
 
 Provider capabilities are grouped by provider identity and shared facts. In each
 set, `shared_limitations` is the ordered common prefix; append a group's ordered

@@ -10,10 +10,8 @@ import { CdpBrowserProvider } from "../../../src/browser/CdpBrowserProvider.js";
 import { webPageInspectionSchema } from "../../../src/domain/browserObservationSchemas.js";
 import { createWebScreenshotArtifact } from "../../../src/domain/webScreenshot.js";
 import { JAVASCRIPT_RUNTIME_RECONCILIATION_EXAMPLE } from "../../../src/contracts/javascript/javascriptRuntimeReconciliationExample.js";
-import {
-  TOOL_CONTRACTS,
-  toolContract,
-} from "../../../src/contracts/toolContracts.js";
+import { TOOL_CONTRACTS } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { expandToolAvailability } from "../../../src/contracts/toolOutputSchemaPrimitives.js";
 import { createServer } from "../../../src/server/createServer.js";
 import { observed } from "../../fixtures/analysisExecution.js";
@@ -64,7 +62,7 @@ it(
       name: "binary_session",
       arguments: {},
     });
-    const sessionStatus = toolContract("binary_session").outputSchema.parse(
+    const sessionStatus = binarySessionFullOutputSchema.parse(
       status.structuredContent,
     );
     const availability = expandToolAvailability(

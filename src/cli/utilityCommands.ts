@@ -18,6 +18,7 @@ import { PRODUCT_IDENTITY } from "../identity.js";
 import { logCliCommand } from "../cliLogging.js";
 import { CLI_COMMANDS } from "../cliCommandNames.js";
 import { swiftSymbolsSchema } from "../contracts/native/nativeToolContracts.js";
+import { sessionStatusDetailSchema } from "../contracts/sessionStatusContract.js";
 import type { Logger } from "pino";
 import { isReferenceSourceImportCliFailure } from "./referenceSourceImportStatus.js";
 import type { CliInstance } from "./types.js";
@@ -165,7 +166,11 @@ const registerCapabilityCommands = (
         command === "capabilities"
           ? "List provider capabilities and side effects"
           : "List configured analysis providers",
-      run: () => logCliCommand(logger, command, () => runSessionStatus(logger)),
+      options: z.object({ detail: sessionStatusDetailSchema }),
+      run: ({ options }) =>
+        logCliCommand(logger, command, () =>
+          runSessionStatus(logger, options.detail),
+        ),
     });
   }
 };
@@ -244,8 +249,8 @@ const registerReferenceSourceCommand = (
     }),
     options: z.object({
       detail: z
-        .enum(["full", "summary"])
-        .default("full")
+        .enum(["complete", "summary"])
+        .default("complete")
         .describe(
           "Complete committed graph or compact historical-source summary",
         ),

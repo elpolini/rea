@@ -326,12 +326,13 @@ registration, the installed skill and optional analysis engines; its overall
 
 Doctor's `providerInspections` are host-level engine and registration checks,
 not a readiness row for every advertised MCP adapter surface. `tools/list`
-remains the complete stable catalog. Call `binary_session` with `{}` before
-choosing an operation; it works before a target is opened, and
-`result.tool_availability` reports per-operation availability, reasons and
-client requirements for the current session state. It does not guarantee that
-a particular caller-supplied input will be valid. See
-[MCP discovery](mcp-contracts.md#identity-and-discovery).
+remains the complete stable catalog. Call `binary_session` before choosing an
+operation; it works before a target is opened. With `{"detail": "summary"}`,
+`result.tool_availability` counts available tools and names only unavailable or
+degraded ones with their reasons and remediation; with `{}` it reports every
+operation's availability, reasons and client requirements for the current
+session state. It does not guarantee that a particular caller-supplied input
+will be valid. See [MCP discovery](mcp-contracts.md#identity-and-discovery).
 
 Select the part you want to check:
 

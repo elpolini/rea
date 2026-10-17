@@ -79,7 +79,7 @@ export const SESSION_TOOL_CONTRACTS = [
   ),
   session(
     "binary_session",
-    "Report the complete current target, provider, capability availability, client-feature, analysis, and server-identity status without starting analysis.",
+    'Report the current target, provider, capability availability, client-feature, analysis, and server-identity status without starting analysis. Omitted or detail "complete" returns the complete inventory. For orientation, detail "summary" returns open/target state, the selected provider, candidate availability, identity essentials and availability counts, naming only unavailable or degraded tools and capabilities with their remediation; request complete for diagnostics, effects, limitations and candidate capability sets.',
     binarySessionInputSchema,
   ),
   session(

@@ -1,7 +1,7 @@
 import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { describe, expect, it } from "vitest";
 import { connectGhidraMcp } from "./ghidraMcpHarness.js";
-import { toolContract } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { expandToolAvailability } from "../../../src/contracts/toolOutputSchemaPrimitives.js";
 
 describe("Ghidra MCP capability routing", () => {
@@ -43,7 +43,7 @@ describe("Ghidra MCP capability routing", () => {
         name: "binary_session",
         arguments: {},
       });
-      const sessionStatus = toolContract("binary_session").outputSchema.parse(
+      const sessionStatus = binarySessionFullOutputSchema.parse(
         status.structuredContent,
       );
       expect(sessionStatus.result).toMatchObject({

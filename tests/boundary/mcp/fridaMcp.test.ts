@@ -5,6 +5,7 @@ import { expect, it, onTestFinished } from "vitest";
 
 import type { FridaInstrumentationPort } from "../../../src/application/frida/FridaInstrumentationPort.js";
 import { toolContract } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { expandToolAvailability } from "../../../src/contracts/toolOutputSchemaPrimitives.js";
 import { FridaInstrumentationManager } from "../../../src/frida/FridaInstrumentationManager.js";
 import { createServer } from "../../../src/server/createServer.js";
@@ -88,7 +89,7 @@ const expectFridaToolsAvailable = async (client: Client) => {
     name: "binary_session",
     arguments: {},
   });
-  const parsedInventory = toolContract("binary_session").outputSchema.safeParse(
+  const parsedInventory = binarySessionFullOutputSchema.safeParse(
     inventory.structuredContent,
   );
   if (!parsedInventory.success)
@@ -296,7 +297,7 @@ it("reports Frida tools as unavailable after the optional binding fails to load"
     name: "binary_session",
     arguments: {},
   });
-  const parsedInventory = toolContract("binary_session").outputSchema.safeParse(
+  const parsedInventory = binarySessionFullOutputSchema.safeParse(
     inventory.structuredContent,
   );
   if (!parsedInventory.success)

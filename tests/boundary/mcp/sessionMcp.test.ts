@@ -32,7 +32,7 @@ import {
   expandProviderCapabilities,
   toolAvailabilityInventory,
 } from "../../../src/contracts/toolOutputSchemaPrimitives.js";
-import { toolContract } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { ok as resultOk } from "../../../src/domain/result.js";
 import {
   createSessionMcpHarness,
@@ -387,8 +387,7 @@ describe("target-free MCP workflow", () => {
     expect(openedStatus).toMatchObject({
       result: { path: await realpath(first) },
     });
-    const sessionStatus =
-      toolContract("binary_session").outputSchema.parse(openedStatus);
+    const sessionStatus = binarySessionFullOutputSchema.parse(openedStatus);
     expect(
       expandProviderCapabilities(sessionStatus.result.capabilities).map(
         ({ operation }) => operation,

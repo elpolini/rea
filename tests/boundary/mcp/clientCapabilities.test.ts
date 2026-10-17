@@ -7,10 +7,8 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { createServer } from "../../../src/server/createServer.js";
-import {
-  TOOL_CONTRACTS,
-  toolContract,
-} from "../../../src/contracts/toolContracts.js";
+import { TOOL_CONTRACTS } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { expandToolAvailability } from "../../../src/contracts/toolOutputSchemaPrimitives.js";
 import {
   createCacheProvider,
@@ -18,8 +16,7 @@ import {
 } from "../../fixtures/binarySession.js";
 
 const assertCompleteToolAvailability = (structuredContent: unknown): void => {
-  const status =
-    toolContract("binary_session").outputSchema.parse(structuredContent);
+  const status = binarySessionFullOutputSchema.parse(structuredContent);
   const availability = expandToolAvailability(status.result.tool_availability);
   expect(availability.map(({ name }) => name).sort()).toEqual(
     TOOL_CONTRACTS.map(({ name }) => name).sort(),

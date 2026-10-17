@@ -6,6 +6,7 @@ import { expect } from "vitest";
 import { readAnalysisSnapshot } from "../../../src/application/binary/AnalysisSnapshotFiles.js";
 import { GoBinaryService } from "../../../src/application/go/GoBinaryService.js";
 import { toolContract } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { expandToolAvailability } from "../../../src/contracts/toolOutputSchemaPrimitives.js";
 import { parseEvidence } from "../../../src/domain/evidence.js";
 import { GoBinaryProvider } from "../../../src/go/GoBinaryProvider.js";
@@ -208,9 +209,8 @@ goMcpTest(
       arguments: {},
     });
     const availability = expandToolAvailability(
-      toolContract("binary_session").outputSchema.parse(
-        status.structuredContent,
-      ).result.tool_availability,
+      binarySessionFullOutputSchema.parse(status.structuredContent).result
+        .tool_availability,
     );
     expect(availability).toContainEqual(
       expect.objectContaining({

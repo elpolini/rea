@@ -109,9 +109,11 @@ run, use `observe_native_calls` with explicit breakpoints and a bounded
 runs and may change files or use the network. Hardened-runtime targets need the
 `get-task-allow` entitlement.
 
-Use `binary_session` with no arguments to check the open target, selected
-provider, and alignment. Its default `result.tool_availability` carries a
-complete inventory grouped by shared facts. Expand each group's `names` and
+Use `binary_session` with `{"detail": "summary"}` to check the open target,
+selected provider, and alignment; it counts available tools and names only
+unavailable or degraded ones with their remediation. Without arguments
+(`detail: "complete"`), `result.tool_availability` carries a complete inventory
+grouped by shared facts. Expand each group's `names` and
 inherit the inventory-level client requirements unless a group overrides them;
 availability, reasons, remediation, modes, and flags remain inline. The
 `effects` and `annotations` arrays name true flags from fixed vocabularies, so an

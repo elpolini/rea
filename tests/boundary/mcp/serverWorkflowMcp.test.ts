@@ -11,10 +11,8 @@ import type {
 } from "../../../src/application/AnalysisProvider.js";
 import { observed as ok } from "../../fixtures/analysisExecution.js";
 import { createServer } from "../../../src/server/createServer.js";
-import {
-  TOOL_CONTRACTS,
-  toolContract,
-} from "../../../src/contracts/toolContracts.js";
+import { TOOL_CONTRACTS } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { expandToolAvailability } from "../../../src/contracts/toolOutputSchemaPrimitives.js";
 
 const resources: Array<{ close(): Promise<void> }> = [];
@@ -136,8 +134,7 @@ it("advertises the complete currently available inventory with a session", async
     ),
   );
   const inventory = expandToolAvailability(
-    toolContract("binary_session").outputSchema.parse(status).result
-      .tool_availability,
+    binarySessionFullOutputSchema.parse(status).result.tool_availability,
   );
   for (const availability of inventory) {
     if (availability.available) continue;

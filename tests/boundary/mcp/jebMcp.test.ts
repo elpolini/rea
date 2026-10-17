@@ -8,6 +8,7 @@ import type {
 } from "../../../src/application/jeb/JebAnalysisPort.js";
 import { createAnalysisExecution } from "../../../src/application/AnalysisProvider.js";
 import { toolContract } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { parseEvidence } from "../../../src/domain/evidence.js";
 import { ok } from "../../../src/domain/result.js";
 import { createServer } from "../../../src/server/createServer.js";
@@ -62,7 +63,7 @@ it("discovers current JEB operation support and recovery through binary_session"
       name: "binary_session",
       arguments: {},
     });
-    const status = toolContract("binary_session").outputSchema.parse(
+    const status = binarySessionFullOutputSchema.parse(
       result.structuredContent,
     ).result;
     return expandToolAvailability(status.tool_availability).filter(

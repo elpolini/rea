@@ -8,6 +8,8 @@ import { providerCapabilitySet } from "../contracts/toolOutputSchemaPrimitives.j
 import { providerCapabilitySets } from "./binary/BinarySessionStatus.js";
 import { sqliteDatabaseCapability } from "./sqlite/SqliteDatabaseCapability.js";
 import { CURRENT_ENTRYPOINT_PATH } from "../process/CurrentEntrypointPath.js";
+import type { SessionStatusDetail } from "../contracts/sessionStatusContract.js";
+import { summarizeSessionStatus } from "./binary/BinarySessionStatusSummary.js";
 
 /** Read target-free provider status and operation availability. */
 export const runSessionStatus = async (
@@ -16,13 +18,14 @@ export const runSessionStatus = async (
     "createBinarySession" | "readConfiguration"
   >,
   logger: Logger = silentLogger,
+  detail: SessionStatusDetail = "complete",
 ): Promise<JsonValue> => {
   const config = dependencies.readConfiguration();
   if (!config.ok) return { error: projectAnalysisError(config.error) };
   const session = await dependencies.createBinarySession(config.value, logger);
   try {
     const status = jsonObjectSchema.parse(await session.status());
-    return {
+    const complete = {
       ...status,
       capabilities: [
         ...providerCapabilitySet.array().parse(status.capabilities),
@@ -35,6 +38,7 @@ export const runSessionStatus = async (
         commandPath: CURRENT_ENTRYPOINT_PATH,
       }),
     };
+    return detail === "summary" ? summarizeSessionStatus(complete) : complete;
   } finally {
     await session.close();
   }

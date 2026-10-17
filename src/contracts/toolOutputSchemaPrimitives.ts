@@ -25,6 +25,14 @@ import {
 import { analysisErrorProjectionSchema } from "./errorSchemas.js";
 import { relationshipCoverageSchema } from "../domain/relationshipCoverage.js";
 import { ZIP_PACKAGE_FORMATS } from "../domain/zipPackageFormat.js";
+import {
+  BINARY_ARCHITECTURES,
+  RAW_ONLY_ARCHITECTURES,
+} from "../domain/binaryTargetTypes.js";
+import {
+  binaryArchitectureSchema,
+  rawBinaryEntryPointSchema,
+} from "../domain/rawBinary.js";
 
 /** Specialize the single normalized result inside a complete Evidence record. */
 export const evidenceResultOf = <Schema extends z.ZodType>(schema: Schema) =>
@@ -75,6 +83,41 @@ export const targetKindSchema = z.enum([
   "archive",
   "artifact",
 ]);
+
+const lifecycleTargetFields = {
+  path: z.string(),
+  kind: targetKindSchema,
+  sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+};
+
+/** Admitted header-detected target identity shared by lifecycle results. */
+export const detectedLifecycleTargetSchema = z.object({
+  ...lifecycleTargetFields,
+  format: targetFormatSchema.exclude(["raw-binary"]),
+  architecture: z
+    .enum(BINARY_ARCHITECTURES)
+    .exclude([...RAW_ONLY_ARCHITECTURES])
+    .nullable(),
+});
+
+/** Admitted caller-interpreted raw target identity shared by lifecycle results. */
+export const rawLifecycleTargetSchema = z.object({
+  ...lifecycleTargetFields,
+  format: z.literal("raw-binary"),
+  kind: z.literal("executable"),
+  architecture: binaryArchitectureSchema,
+  entry_point: rawBinaryEntryPointSchema.describe(
+    "Canonical caller-selected address where raw file offset 0 is mapped and execution is seeded.",
+  ),
+});
+
+/** Open state plus the admitted target identity, without other status facts. */
+export const lifecycleTargetStateSchema = z.union([
+  z.object({ open: z.literal(false) }),
+  detectedLifecycleTargetSchema.extend({ open: z.literal(true) }),
+  rawLifecycleTargetSchema.extend({ open: z.literal(true) }),
+]);
+export type LifecycleTargetState = z.output<typeof lifecycleTargetStateSchema>;
 
 const providerCapabilityFacts = {
   operation: z.string(),
@@ -258,41 +301,51 @@ const providerRejectionCode: z.ZodType<ProviderRejectionCode> = z.enum(
 
 const providerDiagnostics = z.record(z.string(), jsonValueSchema);
 
-const providerAvailability = z.discriminatedUnion("status", [
-  z.object({
+const providerAvailabilityStates = {
+  unknown: {
     status: z.literal("unknown"),
     code: z.null(),
     reason: z.string().min(1),
-    diagnostics: providerDiagnostics,
-  }),
-  z.object({
+  },
+  available: {
     status: z.literal("available"),
     code: z.null(),
     reason: z.null(),
-    diagnostics: providerDiagnostics,
-  }),
-  z.object({
+  },
+  unavailable: {
     status: z.literal("unavailable"),
     code: providerRejectionCode,
     reason: z.string().min(1),
+  },
+};
+
+const providerAvailability = z.discriminatedUnion("status", [
+  z.object({
+    ...providerAvailabilityStates.unknown,
+    diagnostics: providerDiagnostics,
+  }),
+  z.object({
+    ...providerAvailabilityStates.available,
+    diagnostics: providerDiagnostics,
+  }),
+  z.object({
+    ...providerAvailabilityStates.unavailable,
     diagnostics: providerDiagnostics,
   }),
 ]);
 
-const providerTargetSupport = z.discriminatedUnion("status", [
-  z.object({
+const providerTargetSupportStates = {
+  unknown: {
     status: z.literal("unknown"),
     code: z.null(),
     reason: z.string().min(1),
-    diagnostics: providerDiagnostics,
-  }),
-  z.object({
+  },
+  supported: {
     status: z.literal("supported"),
     code: z.null(),
     reason: z.null(),
-    diagnostics: providerDiagnostics,
-  }),
-  z.object({
+  },
+  unsupported: {
     status: z.literal("unsupported"),
     code: z.enum([
       "target_kind_unsupported",
@@ -302,6 +355,20 @@ const providerTargetSupport = z.discriminatedUnion("status", [
       "managed_target_unsupported",
     ]),
     reason: z.string().min(1),
+  },
+};
+
+const providerTargetSupport = z.discriminatedUnion("status", [
+  z.object({
+    ...providerTargetSupportStates.unknown,
+    diagnostics: providerDiagnostics,
+  }),
+  z.object({
+    ...providerTargetSupportStates.supported,
+    diagnostics: providerDiagnostics,
+  }),
+  z.object({
+    ...providerTargetSupportStates.unsupported,
     diagnostics: providerDiagnostics,
   }),
 ]);
@@ -324,6 +391,13 @@ export type ClientFeatureAvailability = z.infer<
   typeof clientFeatureAvailabilitySchema
 >;
 
+const unavailableToolAvailabilityMode = z.object({
+  name: z.string(),
+  available: z.literal(false),
+  missing_operations: z.array(z.string()).min(1),
+  remediation: z.string().nullable(),
+});
+
 const toolAvailabilityMode = z.discriminatedUnion("available", [
   z.object({
     name: z.string(),
@@ -331,12 +405,7 @@ const toolAvailabilityMode = z.discriminatedUnion("available", [
     missing_operations: z.array(z.string()).length(0),
     remediation: z.null(),
   }),
-  z.object({
-    name: z.string(),
-    available: z.literal(false),
-    missing_operations: z.array(z.string()).min(1),
-    remediation: z.string().nullable(),
-  }),
+  unavailableToolAvailabilityMode,
 ]);
 export type ToolAvailabilityMode = z.output<typeof toolAvailabilityMode>;
 
@@ -467,6 +536,68 @@ export const expandToolAvailability = (
     ),
   );
 
+const sha256Hex = z.string().regex(/^[a-f0-9]{64}$/u);
+const catalogCounts = z.strictObject({
+  cli_commands: z.number().int().min(0),
+  mcp_tools: z.number().int().min(0),
+  mcp_prompts: z.number().int().min(0),
+});
+const connectedClientIdentity = z
+  .object({ name: z.string(), version: z.string() })
+  .nullable();
+const skillIdentity = z.object({
+  name: z.string(),
+  expected_version: z.string(),
+});
+const serverAlignment = z.object({
+  state: z.enum(["aligned", "mcp_server_restart_required", "unknown"]),
+  reasons: z.array(z.string()),
+  remediation: z.string().nullable(),
+});
+
+const serverIdentity = z.object({
+  package: z.object({
+    name: z.string(),
+    version: z.string(),
+    root_path: z.string(),
+    build_commit: z.string().nullable(),
+  }),
+  server: z.object({
+    name: z.string(),
+    version: z.string(),
+    started_at: z.string(),
+    command_path: z.string().nullable(),
+  }),
+  sdk: z.object({
+    server: z.string(),
+    client_test: z.string(),
+    core: z.string(),
+  }),
+  negotiated_protocol_version: z.string().nullable(),
+  client: connectedClientIdentity,
+  skill: skillIdentity,
+  catalog: z.strictObject({
+    counts: catalogCounts,
+    digests: z.strictObject({
+      tools_sha256: sha256Hex,
+      prompts_sha256: sha256Hex,
+      combined_sha256: sha256Hex,
+    }),
+  }),
+  protocol_features: z.object({
+    progress: z.boolean(),
+    cancellation: z.boolean(),
+    elicitation: z.boolean(),
+  }),
+  alignment: serverAlignment,
+});
+
+const analysisProviderSelectionSource = z.enum([
+  "request",
+  "environment",
+  "auto-single-candidate",
+]);
+
 export const sessionProvider = z
   .object({
     cleanup_pending: z.boolean(),
@@ -477,11 +608,7 @@ export const sessionProvider = z
     analysis_provider_binding: z
       .object({
         provider: providerIdentity,
-        selection_source: z.enum([
-          "request",
-          "environment",
-          "auto-single-candidate",
-        ]),
+        selection_source: analysisProviderSelectionSource,
         analysis_profile: analysisProfileSchema,
       })
       .nullable(),
@@ -495,58 +622,153 @@ export const sessionProvider = z
       }),
     ),
     tool_availability: toolAvailabilityInventory,
-    client_features: z.object({
-      elicitation_form: z.boolean(),
-      elicitation_url: z.boolean(),
-      roots: z.boolean(),
-      sampling: z.boolean(),
-    }),
-    server_identity: z.object({
-      package: z.object({
-        name: z.string(),
-        version: z.string(),
-        root_path: z.string(),
-        build_commit: z.string().nullable(),
-      }),
-      server: z.object({
-        name: z.string(),
-        version: z.string(),
-        started_at: z.string(),
-        command_path: z.string().nullable(),
-      }),
-      sdk: z.object({
-        server: z.string(),
-        client_test: z.string(),
-        core: z.string(),
-      }),
-      negotiated_protocol_version: z.string().nullable(),
-      client: z.object({ name: z.string(), version: z.string() }).nullable(),
-      skill: z.object({ name: z.string(), expected_version: z.string() }),
-      catalog: z.strictObject({
-        counts: z.strictObject({
-          cli_commands: z.number().int().min(0),
-          mcp_tools: z.number().int().min(0),
-          mcp_prompts: z.number().int().min(0),
-        }),
-        digests: z.strictObject({
-          tools_sha256: z.string().regex(/^[a-f0-9]{64}$/u),
-          prompts_sha256: z.string().regex(/^[a-f0-9]{64}$/u),
-          combined_sha256: z.string().regex(/^[a-f0-9]{64}$/u),
-        }),
-      }),
-      protocol_features: z.object({
-        progress: z.boolean(),
-        cancellation: z.boolean(),
-        elicitation: z.boolean(),
-      }),
-      alignment: z.object({
-        state: z.enum(["aligned", "mcp_server_restart_required", "unknown"]),
-        reasons: z.array(z.string()),
-        remediation: z.string().nullable(),
-      }),
-    }),
+    client_features: clientFeatureAvailabilitySchema,
+    server_identity: serverIdentity,
   })
   .passthrough();
+
+/**
+ * Complete status facts produced by either adapter. Only MCP negotiates client
+ * features and computes per-tool availability, so CLI status omits them.
+ */
+export const sessionStatusFactsSchema = sessionProvider
+  .omit({ tool_availability: true, client_features: true })
+  .extend({
+    tool_availability: toolAvailabilityInventory.optional(),
+    client_features: clientFeatureAvailabilitySchema.optional(),
+  });
+export type SessionStatusFacts = z.output<typeof sessionStatusFactsSchema>;
+
+const summaryCount = z.number().int().min(0);
+const summaryNames = z.array(z.string().min(1)).min(1);
+
+const providerCandidateSummary = z.strictObject({
+  provider: providerIdentity,
+  availability: z.discriminatedUnion("status", [
+    z.strictObject(providerAvailabilityStates.unknown),
+    z.strictObject(providerAvailabilityStates.available),
+    z.strictObject(providerAvailabilityStates.unavailable),
+  ]),
+  target_support: z.discriminatedUnion("status", [
+    z.strictObject(providerTargetSupportStates.unknown),
+    z.strictObject(providerTargetSupportStates.supported),
+    z.strictObject(providerTargetSupportStates.unsupported),
+  ]),
+  selected: z.boolean(),
+  operations: z.strictObject({ total: summaryCount, available: summaryCount }),
+});
+
+const capabilityAvailabilitySummary = z.strictObject({
+  counts: z.strictObject({
+    providers: summaryCount,
+    operations: summaryCount,
+    available: summaryCount,
+    unavailable: summaryCount,
+  }),
+  unavailable: z.array(
+    z.strictObject({
+      provider: providerIdentity,
+      operations: summaryNames,
+      reason: z.string().nullable(),
+      availability_code: z.enum(PROVIDER_REJECTION_CODES).nullable(),
+    }),
+  ),
+});
+
+const toolAvailabilitySummary = z.strictObject({
+  counts: z.strictObject({
+    tools: summaryCount,
+    available: summaryCount,
+    unavailable: summaryCount,
+    degraded: summaryCount,
+  }),
+  unavailable: z.array(
+    z.strictObject({
+      reason: toolUnavailabilityReason,
+      remediation: z.string().nullable(),
+      names: summaryNames,
+    }),
+  ),
+  degraded: z.array(
+    z.strictObject({
+      names: summaryNames,
+      default_mode_available: z.boolean(),
+      unavailable_modes: z.array(unavailableToolAvailabilityMode.strict()),
+      missing_optional_client_features: z.array(clientFeatureNameSchema),
+    }),
+  ),
+});
+
+const analysisRunSummary = z
+  .strictObject({
+    run_id: z.string().uuid(),
+    process_lineage: z.strictObject({
+      status: z.enum(["not_observed", "snapshots"]),
+      verified: summaryCount,
+      unavailable: z.array(
+        z.strictObject({
+          provider: providerIdentity,
+          reason: z.string().min(1),
+        }),
+      ),
+    }),
+  })
+  .nullable();
+
+const serverIdentitySummary = z.strictObject({
+  package: z.strictObject({
+    name: z.string(),
+    version: z.string(),
+    build_commit: z.string().nullable(),
+  }),
+  server: z.strictObject({
+    name: z.string(),
+    started_at: z.string(),
+    command_path: z.string().nullable(),
+  }),
+  negotiated_protocol_version: z.string().nullable(),
+  client: connectedClientIdentity,
+  skill: skillIdentity,
+  catalog: z.strictObject({
+    counts: catalogCounts,
+    combined_sha256: sha256Hex,
+  }),
+  alignment: serverAlignment,
+});
+
+/**
+ * Orientation summary shared by CLI and MCP. It keeps target state, the
+ * selected provider, identity essentials and availability counts, and names
+ * only unavailable or degraded entries with their remediation. Diagnostics,
+ * effects, limitations and candidate capability sets remain in detail complete.
+ */
+export const sessionStatusSummaryCore = z.strictObject({
+  detail: z.literal("summary"),
+  cleanup_pending: z.boolean(),
+  analysis_run: analysisRunSummary,
+  analysis_activity: analysisActivity,
+  provider_operation_health: providerOperationHealth,
+  analysis_provider_binding: z
+    .strictObject({
+      provider: providerIdentity,
+      selection_source: analysisProviderSelectionSource,
+      analysis_profile_digest: analysisProfileSchema.shape.digest,
+    })
+    .nullable(),
+  analysis_provider_candidates: z.array(providerCandidateSummary),
+  capabilities: capabilityAvailabilitySummary,
+  server_identity: serverIdentitySummary,
+});
+export type SessionStatusSummaryCore = z.output<
+  typeof sessionStatusSummaryCore
+>;
+
+/** MCP summary, which also carries negotiated client and tool availability. */
+export const sessionStatusSummary = sessionStatusSummaryCore.extend({
+  tool_availability: toolAvailabilitySummary,
+  client_features: clientFeatureAvailabilitySchema.strict(),
+});
+export type ToolAvailabilitySummary = z.output<typeof toolAvailabilitySummary>;
 
 export const nullableText = z.string().nullable();
 export const addressList = z.array(z.string());

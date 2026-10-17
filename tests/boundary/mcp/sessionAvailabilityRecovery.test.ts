@@ -1,7 +1,7 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { expect, it } from "vitest";
 
-import { toolContract } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { expandToolAvailability } from "../../../src/contracts/toolOutputSchemaPrimitives.js";
 import { ProviderAdapterError } from "../../../src/domain/providerAdapterError.js";
 import { ProviderCleanupError } from "../../../src/domain/providerCleanupError.js";
@@ -74,9 +74,7 @@ it("restores MCP tool availability after cancelling a target switch", async () =
       name: "binary_session",
       arguments: {},
     });
-    return toolContract("binary_session").outputSchema.parse(
-      reply.structuredContent,
-    ).result;
+    return binarySessionFullOutputSchema.parse(reply.structuredContent).result;
   };
   try {
     await server.connect(serverTransport);
@@ -200,9 +198,7 @@ it("keeps a retired run and its lineage visible over MCP until cleanup succeeds"
       name: "binary_session",
       arguments: {},
     });
-    return toolContract("binary_session").outputSchema.parse(
-      reply.structuredContent,
-    ).result;
+    return binarySessionFullOutputSchema.parse(reply.structuredContent).result;
   };
   try {
     await server.connect(serverTransport);

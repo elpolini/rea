@@ -8,6 +8,7 @@ import {
   buildCapabilityInventory,
   compactToolAvailability,
 } from "../application/CapabilityInventory.js";
+import { summarizeSessionStatus } from "../application/binary/BinarySessionStatusSummary.js";
 import { toolContract } from "../contracts/toolContracts.js";
 import type {
   ClientFeatureAvailability,
@@ -126,15 +127,19 @@ export const registerSessionStatusTool = (
         ...(client === undefined ? {} : { client }),
         ...(protocolVersion === undefined ? {} : { protocolVersion }),
       });
+      const complete = projectSessionStatus({
+        status: statusObject,
+        toolAvailability,
+        serverIdentity,
+        clientFeatures,
+      });
       return server.delivery.toCallToolResult(
         {
           ok: true,
-          value: projectSessionStatus({
-            status: statusObject,
-            toolAvailability,
-            serverIdentity,
-            clientFeatures,
-          }),
+          value:
+            input.detail === "summary"
+              ? summarizeSessionStatus(complete)
+              : complete,
         },
         contract,
       );

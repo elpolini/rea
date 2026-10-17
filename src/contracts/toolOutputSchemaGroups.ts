@@ -8,14 +8,6 @@ import {
   managedMemberSummaryViewResultSchema,
 } from "../domain/analysisView/analysisView.js";
 import { evidenceBundleSummarySchema } from "../domain/evidenceRecordSummary.js";
-import {
-  BINARY_ARCHITECTURES,
-  RAW_ONLY_ARCHITECTURES,
-} from "../domain/binaryTargetTypes.js";
-import {
-  binaryArchitectureSchema,
-  rawBinaryEntryPointSchema,
-} from "../domain/rawBinary.js";
 import { nativeFunctionAnnotationsSchema } from "../domain/native/nativeFunctionAnnotations.js";
 import { nativeLoadImageSchema } from "../domain/native/nativeLoadImage.js";
 import { nativeUiResultSchema } from "../domain/native/nativeUiObservation.js";
@@ -78,17 +70,18 @@ import {
   addressedValue,
   addressedEntry,
   containingProcedureResolution,
+  detectedLifecycleTargetSchema,
   functionDossierOutput,
   graphNode,
   lifecycleResultOf,
   nullableText,
   procedureInfoOutput,
   evidenceResultOf,
+  rawLifecycleTargetSchema,
   segmentOutput,
   sessionProvider,
+  sessionStatusSummary,
   symbolDiscoveryOutput,
-  targetFormatSchema,
-  targetKindSchema,
 } from "./toolOutputSchemaPrimitives.js";
 
 import { processCaptureSchema } from "../domain/process/processCapture.js";
@@ -460,28 +453,38 @@ export const managedWorkflowOutputSchemas: Readonly<
   ),
 };
 
-const lifecycleTargetFields = {
-  path: z.string(),
-  kind: targetKindSchema,
-  sha256: z.string().regex(/^[a-f0-9]{64}$/u),
-};
-const detectedLifecycleTargetSchema = z.object({
-  ...lifecycleTargetFields,
-  format: targetFormatSchema.exclude(["raw-binary"]),
-  architecture: z
-    .enum(BINARY_ARCHITECTURES)
-    .exclude([...RAW_ONLY_ARCHITECTURES])
-    .nullable(),
-});
-const rawLifecycleTargetSchema = z.object({
-  ...lifecycleTargetFields,
-  format: z.literal("raw-binary"),
-  kind: z.literal("executable"),
-  architecture: binaryArchitectureSchema,
-  entry_point: rawBinaryEntryPointSchema.describe(
-    "Canonical caller-selected address where raw file offset 0 is mapped and execution is seeded.",
-  ),
-});
+const completeSessionStatuses = [
+  sessionProvider.extend({ open: z.literal(false) }),
+  sessionProvider.extend({
+    open: z.literal(true),
+    ...detectedLifecycleTargetSchema.shape,
+  }),
+  sessionProvider.extend({
+    open: z.literal(true),
+    ...rawLifecycleTargetSchema.shape,
+  }),
+] as const;
+const summarySessionStatuses = [
+  sessionStatusSummary.extend({ open: z.literal(false) }),
+  sessionStatusSummary.extend({
+    open: z.literal(true),
+    ...detectedLifecycleTargetSchema.shape,
+  }),
+  sessionStatusSummary.extend({
+    open: z.literal(true),
+    ...rawLifecycleTargetSchema.shape,
+  }),
+] as const;
+
+/** binary_session result when detail is omitted or "complete". */
+export const binarySessionFullOutputSchema = lifecycleResultOf(
+  z.union(completeSessionStatuses),
+);
+
+/** binary_session result when detail is "summary". */
+export const binarySessionSummaryOutputSchema = lifecycleResultOf(
+  z.union(summarySessionStatuses),
+);
 
 /** Exact structured-content schemas for target lifecycle operations. */
 export const sessionOutputSchemas = {
@@ -518,17 +521,7 @@ export const sessionOutputSchemas = {
     ]),
   ),
   binary_session: lifecycleResultOf(
-    z.union([
-      sessionProvider.extend({ open: z.literal(false) }),
-      sessionProvider.extend({
-        open: z.literal(true),
-        ...detectedLifecycleTargetSchema.shape,
-      }),
-      sessionProvider.extend({
-        open: z.literal(true),
-        ...rawLifecycleTargetSchema.shape,
-      }),
-    ]),
+    z.union([...completeSessionStatuses, ...summarySessionStatuses]),
   ),
   export_evidence_bundle: lifecycleResultOf(
     z.object({

@@ -14,6 +14,7 @@ import {
   TOOL_CONTRACTS,
   toolContract,
 } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { expandToolAvailability } from "../../../src/contracts/toolOutputSchemaPrimitives.js";
 import { run } from "../../../src/main.js";
 import { createServer } from "../../../src/server/createServer.js";
@@ -155,7 +156,7 @@ mcpTest.for(failedAdapters)(
       name: "binary_session",
       arguments: {},
     });
-    const sessionStatus = toolContract("binary_session").outputSchema.parse(
+    const sessionStatus = binarySessionFullOutputSchema.parse(
       status.structuredContent,
     );
     const availability = expandToolAvailability(

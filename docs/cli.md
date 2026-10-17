@@ -133,6 +133,17 @@ These commands describe binary-session providers and auxiliary capabilities.
 For the complete MCP surface, use the connected server's tool list and the
 session's advertised availability; individual guides describe prerequisites.
 
+Add `--detail summary` for a compact answer: provider candidates with their
+availability and operation counts, the selected provider, identity essentials,
+and only the unavailable capabilities with their reasons. The default
+`--detail complete` keeps diagnostics, effects and limitations. MCP
+`binary_session` accepts the same `detail` values; see
+[MCP discovery](mcp-contracts.md#identity-and-discovery).
+
+```bash
+rea providers --detail summary --json
+```
+
 With automatic selection, REA uses the single available provider that supports
 the target. When several providers support it, select one explicitly:
 

@@ -18,6 +18,7 @@ import type {
 } from "../../../src/application/frida/FridaInstrumentationPort.js";
 import type { EvidenceWriter } from "../../../src/application/investigation/InvestigationRecordPort.js";
 import { toolContract } from "../../../src/contracts/toolContracts.js";
+import { binarySessionFullOutputSchema } from "../../../src/contracts/toolOutputSchemaGroups.js";
 import { expandToolAvailability } from "../../../src/contracts/toolOutputSchemaPrimitives.js";
 import type { AnalysisPartialObservation } from "../../../src/domain/analysisErrorBase.js";
 import { AnalysisCancelledError } from "../../../src/domain/analysisErrorCore.js";
@@ -276,9 +277,8 @@ it("declares non-destructive session mutation when status retains Evidence", asy
   });
   expect(inventory.isError).not.toBe(true);
   const available = expandToolAvailability(
-    toolContract("binary_session").outputSchema.parse(
-      inventory.structuredContent,
-    ).result.tool_availability,
+    binarySessionFullOutputSchema.parse(inventory.structuredContent).result
+      .tool_availability,
   );
   expect(
     available.find((tool) => tool.name === "frida_session_status"),

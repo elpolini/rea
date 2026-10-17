@@ -237,13 +237,18 @@ ask when matches are ambiguous. Never choose an example app on the user's behalf
 
 In a target-free session, use `open_binary` to bind any archive/package or
 native target whose analysis tool operates on the active target. Do not call an
-unadvertised tool; inspect `binary_session` with `{}` and its
-`result.tool_availability` for availability reasons and remediation. Expand each
-group's `names` into entries, inheriting the inventory-level client requirements
-unless the group overrides them. In its closed effect and annotation vocabularies,
-listed flags are true and omitted known flags are false. The grouped name union
-is the complete tool inventory; use `tools/list` for canonical tool schemas.
-Provider candidate facts describe possible providers, while top-level session
+unadvertised tool. For orientation, call `binary_session` with
+`{"detail": "summary"}`: it returns the open target, selected provider, provider
+candidates, identity essentials and availability counts, and names only
+unavailable or degraded tools and capabilities with their reasons and
+remediation. Request the default `{}` (`detail: "complete"`) only when you need
+provider diagnostics, effects, limitations, candidate capability sets or the
+complete `result.tool_availability`. There, expand each group's `names` into
+entries, inheriting the inventory-level client requirements unless the group
+overrides them. In its closed effect and annotation vocabularies, listed flags
+are true and omitted known flags are false. The grouped name union is the
+complete tool inventory; use `tools/list` for canonical tool schemas. Provider
+candidate facts describe possible providers, while top-level session
 capabilities describe the current route and `analysis_provider_binding` names the
 selected provider. Do not treat those scopes as interchangeable.
 
