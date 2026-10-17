@@ -65,11 +65,12 @@ describe("skill bundle ownership", () => {
       `The generated REA skill bundle is missing: ${manifest} does not exist. Regenerate it from .agents/skills/${SKILL}: run \`npm run build:cached\` in the source checkout ${root}, then run setup again.`,
     );
 
-    // Windows run-exclusive builds need the native Job Object owner; the
-    // generator itself does not, so the direct commands remain available.
+    // Windows run-exclusive builds need the native Job Object owner: restoring
+    // or building the artifacts keeps the locked build, offered first; the
+    // generator itself does not, so the unlocked commands remain the fallback.
     const windows = await unavailable(source(root, "win32"));
-    expect(windows.remediation).toContain(
-      "without them, run `npm run compile` and then `npm run artifacts:skills` in the checkout instead",
+    expect(windows.remediation).toBe(
+      `${linux.remediation} On Windows, \`npm run build:cached\` needs the native artifacts in native/windows/build: run \`npm run restore:windows-native\` (or build them with the Linux/MinGW lane in native/windows/README.md), then \`npm run build:cached\`. Without them, \`npm run compile\` and then \`npm run artifacts:skills\` also regenerate the bundle, but without the build lock, so run them only while no other build is running.`,
     );
   });
 

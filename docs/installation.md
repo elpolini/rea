@@ -151,7 +151,9 @@ Windows that build needs the native artifacts, so the checkout is first told
 to run `npm run restore:windows-native` (or the Linux/MinGW lane in
 `native/windows/README.md`) and then `npm run build:cached`; `npm run compile`
 followed by `npm run artifacts:skills` remains an alternative without the
-build lock, to run only while no other build is running. `--skill=false` still configures clients without the skill.
+build lock, to run only while no other build is running. `--skill=false` still
+configures clients without the skill; the hint names only the selected clients
+that setup would still write, not aligned or manual-registration clients.
 Doctor names the same command, and reports an installed copy whose current
 metadata cannot be compared without the bundle as `unknown`. When the bundle is
 usable, doctor's update command for a checkout is setup through that checkout's
