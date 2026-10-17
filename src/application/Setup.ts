@@ -101,21 +101,28 @@ const runSetupWorkflow = async (
     );
   const failSkill = async (
     error: SetupSkillError,
-    // Admission fails before any client changes; a failed install follows them.
-    unconfiguredClientIds: readonly string[] = selectedClientIds,
+    // Clients that `--skill=false` would still configure: the planned writes
+    // before admission, and none once a failed install follows them.
+    configurableClientIds: readonly string[],
   ): Promise<SetupResult> => ({
-    ...(await fail(skillFailureRemediation(error, unconfiguredClientIds))),
+    ...(await fail(skillFailureRemediation(error, configurableClientIds))),
     code: "skill_install_failed",
   });
   // The source bundle and the selected roots must both be usable before any
   // client, Hopper, or skill mutation; otherwise setup would half-apply.
-  const admitSkill = async (): Promise<SetupResult | undefined> => {
+  // Aligned and manual-registration clients have no planned write.
+  const admitSkill = async (
+    clientsToConfigure: readonly SetupClient[],
+  ): Promise<SetupResult | undefined> => {
+    const configurableClientIds = clientsToConfigure.map(({ name }) => name);
     const bundle = await host.inspectSkillBundle();
-    if (!bundle.ok) return failSkill(bundle.error);
+    if (!bundle.ok) return failSkill(bundle.error, configurableClientIds);
     const admission = await host.validateSkillDirectories(
       selectedSkillClientIds,
     );
-    return admission.ok ? undefined : failSkill(admission.error);
+    return admission.ok
+      ? undefined
+      : failSkill(admission.error, configurableClientIds);
   };
   const unsupported = await hostRemediation(host, false);
   if (unsupported !== undefined) return fail(unsupported);
@@ -258,7 +265,7 @@ const runSetupWorkflow = async (
 
   const manualRemediation = manualClientsRemediation(planned.selectedClients);
   if (skillSelected) {
-    const blocked = await admitSkill();
+    const blocked = await admitSkill(planSelection.clientsToConfigure);
     if (blocked !== undefined) return blocked;
   }
   if (options.dryRun === true)
@@ -314,7 +321,7 @@ const runSetupWorkflow = async (
   // Approval may pause while a skill manager changes a selected directory or
   // a checkout build regenerates the bundle.
   if (planSelection.skillSelected) {
-    const blocked = await admitSkill();
+    const blocked = await admitSkill(planSelection.clientsToConfigure);
     if (blocked !== undefined) return blocked;
   }
   let selectedClients: readonly SetupClient[] =

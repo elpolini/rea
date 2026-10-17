@@ -135,20 +135,20 @@ describe("selected skill admission", () => {
   });
 });
 
-describe("skill bundle admission", () => {
-  const missingCheckoutBundle = () =>
-    err(
-      new SkillBundleUnavailableError({
-        state: "missing",
-        installation: "source_checkout",
-        path: "/checkout/rea/skills/reverse-engineer-anything/SKILL.md",
-        detail:
-          "/checkout/rea/skills/reverse-engineer-anything/SKILL.md does not exist",
-        action:
-          "Regenerate it from .agents/skills/reverse-engineer-anything: run `npm run build:cached` in the source checkout /checkout/rea, then run setup again.",
-      }),
-    );
+const missingCheckoutBundle = () =>
+  err(
+    new SkillBundleUnavailableError({
+      state: "missing",
+      installation: "source_checkout",
+      path: "/checkout/rea/skills/reverse-engineer-anything/SKILL.md",
+      detail:
+        "/checkout/rea/skills/reverse-engineer-anything/SKILL.md does not exist",
+      action:
+        "Regenerate it from .agents/skills/reverse-engineer-anything: run `npm run build:cached` in the source checkout /checkout/rea, then run setup again.",
+    }),
+  );
 
+describe("skill bundle admission", () => {
   it.each([
     ["dry run", { dryRun: true, approved: false }],
     ["approved", { approved: true }],
@@ -283,6 +283,72 @@ describe("skill bundle admission", () => {
     );
     expect(result.remediation).not.toContain("--skill=false");
     expect(host.skillInstalls).toBe(1);
+  });
+});
+
+describe("--skill=false remediation", () => {
+  it("names only the clients --skill=false would still configure", async () => {
+    const host = new FakeSetupHost();
+    host.hopper = "/Applications/Hopper";
+    host.clients = [
+      { name: "claude_code", configPath: "/claude.json" },
+      { name: "codex", configPath: "/codex.toml", format: "toml" },
+      { name: "cursor", configPath: "/cursor.json" },
+      {
+        name: "grok_bot",
+        displayName: "Grok Bot",
+        configPath: "/home/user/.grokbot",
+        format: "unsupported",
+      },
+    ];
+    host.clientInspections.set("codex", { status: "already_current" });
+    host.skillBundle = missingCheckoutBundle();
+
+    const result = await runSetup(
+      {
+        ...options(false),
+        dryRun: true,
+        clientIds: ["claude_code", "codex", "cursor", "grok_bot"],
+      },
+      host,
+    );
+
+    expect(result).toMatchObject({
+      status: "needs_human",
+      code: "skill_install_failed",
+    });
+    expect(result.remediation).toContain(
+      "To configure claude_code, cursor without installing the skill, rerun setup with --skill=false.",
+    );
+    expect(host.configurations).toBe(0);
+  });
+
+  it("does not suggest --skill=false when no selected client needs a write", async () => {
+    const host = new FakeSetupHost();
+    host.hopper = "/Applications/Hopper";
+    host.clients = [
+      { name: "codex", configPath: "/codex.toml", format: "toml" },
+      {
+        name: "grok_bot",
+        displayName: "Grok Bot",
+        configPath: "/home/user/.grokbot",
+        format: "unsupported",
+      },
+    ];
+    host.clientInspections.set("codex", { status: "already_current" });
+    host.skillBundle = missingCheckoutBundle();
+
+    const result = await runSetup(
+      { ...options(false), dryRun: true, clientIds: ["codex", "grok_bot"] },
+      host,
+    );
+
+    expect(result).toMatchObject({
+      status: "needs_human",
+      code: "skill_install_failed",
+    });
+    expect(result.remediation).toContain("run `npm run build:cached`");
+    expect(result.remediation).not.toContain("--skill=false");
   });
 });
 
