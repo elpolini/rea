@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ADB_BINARY_ENV,
+  adbRegistrationEnvironment,
   parseAdbVersionOutput,
   resolveAdbBinary,
 } from "./AdbConfiguration.js";
@@ -30,6 +31,33 @@ describe("resolveAdbBinary", () => {
       /must be an absolute path/u,
     );
   });
+});
+
+describe("adbRegistrationEnvironment", () => {
+  const ambient = { PATH: "/ambient/bin", TEMP: "/ambient/temp" };
+
+  it("publishes only the explicit binary, exactly as selected", () => {
+    expect(
+      adbRegistrationEnvironment({
+        ...ambient,
+        [ADB_BINARY_ENV]: "/opt/platform-tools/adb",
+      }),
+    ).toEqual({ [ADB_BINARY_ENV]: "/opt/platform-tools/adb" });
+  });
+
+  it.each([
+    { name: "an unset selection", value: undefined },
+    { name: "an empty selection", value: "" },
+    { name: "a blank selection", value: "  " },
+    { name: "a relative path", value: "platform-tools/adb" },
+  ])(
+    "publishes nothing for $name, including the PATH that would resolve it",
+    ({ value }) => {
+      expect(
+        adbRegistrationEnvironment({ ...ambient, [ADB_BINARY_ENV]: value }),
+      ).toEqual({});
+    },
+  );
 });
 
 describe("parseAdbVersionOutput", () => {

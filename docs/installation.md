@@ -68,6 +68,10 @@ before that edit.
 Setup also retains valid environment overrides in REA's existing server entry,
 such as `REA_MCP_INPUT_SCHEMA_PROFILE`, `REA_MCP_OUTPUT_SCHEMA_PROFILE`, and
 `REA_MCP_MAX_RESPONSE_BYTES`.
+Detected provider settings come from the environment setup runs in and are
+validated by their provider, for example a verified Ghidra installation,
+`REA_JEB_MCP_URL`, `REA_APKTOOL_COMMAND`, or `REA_ADB_PATH`. Setup does not
+copy inherited variables such as `PATH` or `TEMP`.
 Detected provider settings replace only matching environment keys.
 Setup and doctor report a malformed REA environment map or invalid runtime
 setting before setup writes files. Repair the named setting in the client

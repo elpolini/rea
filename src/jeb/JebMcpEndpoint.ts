@@ -61,3 +61,20 @@ export const parseJebMcpEndpoint = (
     );
   return ok(url);
 };
+
+/**
+ * The endpoint selection an agent registration carries. Only an explicit,
+ * syntactically valid REA_JEB_MCP_URL is published, exactly as the caller
+ * spelled it; the default endpoint is not a caller selection. Validation does
+ * not establish that the JEB service is reachable or has a project open.
+ */
+export const jebRegistrationEnvironment = (
+  environment: Readonly<Record<string, string | undefined>>,
+): Readonly<Record<string, string>> => {
+  const selected = environment.REA_JEB_MCP_URL;
+  return selected !== undefined &&
+    selected.length > 0 &&
+    parseJebMcpEndpoint(selected).ok
+    ? { REA_JEB_MCP_URL: selected }
+    : {};
+};

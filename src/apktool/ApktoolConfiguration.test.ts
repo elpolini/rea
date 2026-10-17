@@ -5,6 +5,7 @@ import {
   apktoolConfigurationAvailability,
   ApktoolConfigurationFailure,
   apktoolInvocation,
+  apktoolRegistrationEnvironment,
   inspectApktoolClient,
   parseApktoolVersionOutput,
   resolveApktoolCommand,
@@ -48,6 +49,58 @@ describe("resolveApktoolCommand", () => {
       resolveApktoolCommand({ [APKTOOL_COMMAND_ENV]: "bin/apktool" }),
     ).rejects.toThrow(/must be an absolute path/u);
   });
+});
+
+describe("apktoolRegistrationEnvironment", () => {
+  const ambient = {
+    PATH: "/ambient/bin",
+    PATHEXT: ".EXE;.BAT",
+    TEMP: "/ambient/temp",
+    TMP: "/ambient/tmp",
+  };
+
+  it("publishes only the explicit launcher, exactly as selected", () => {
+    expect(
+      apktoolRegistrationEnvironment(
+        { ...ambient, [APKTOOL_COMMAND_ENV]: "/opt/apktool/apktool" },
+        "linux",
+      ),
+    ).toEqual({ [APKTOOL_COMMAND_ENV]: "/opt/apktool/apktool" });
+  });
+
+  it("canonicalizes a Windows variable name before publishing the selection", () => {
+    expect(
+      apktoolRegistrationEnvironment(
+        { ...ambient, rea_apktool_command: "C:\\Tools\\apktool.bat" },
+        "win32",
+      ),
+    ).toEqual({ [APKTOOL_COMMAND_ENV]: "C:\\Tools\\apktool.bat" });
+  });
+
+  it.each([
+    { name: "an unset selection", value: undefined, platform: "linux" },
+    { name: "an empty selection", value: "", platform: "linux" },
+    { name: "a blank selection", value: "  ", platform: "linux" },
+    { name: "a relative POSIX path", value: "bin/apktool", platform: "linux" },
+    { name: "a bare Windows name", value: "apktool.bat", platform: "win32" },
+    {
+      name: "a drive-relative Windows path",
+      value: "C:apktool.bat",
+      platform: "win32",
+    },
+  ] as const)(
+    "publishes nothing for $name, including the PATH that would resolve it",
+    ({ value, platform }) => {
+      // The runtime parser owns the same decision: a blank value resolves
+      // from PATH, and a relative one is rejected rather than persisted.
+      expect(
+        apktoolRegistrationEnvironment(
+          { ...ambient, [APKTOOL_COMMAND_ENV]: value },
+          platform,
+        ),
+      ).toEqual({});
+    },
+  );
 });
 
 describe("parseApktoolVersionOutput", () => {

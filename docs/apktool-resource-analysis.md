@@ -17,6 +17,14 @@ launcher can find. Select the launcher through the environment:
 export REA_APKTOOL_COMMAND=/absolute/path/apktool
 ```
 
+For setup registration, set `REA_APKTOOL_COMMAND` in the REA process
+environment before running `rea setup`. The approved setup plan records the
+exact selected path in the agent's REA server environment after checking that
+it is absolute. A blank or relative value is not recorded. A launcher found on
+`PATH` is not copied either, nor is `PATH` itself: the registered server
+resolves Apktool from the environment its client starts it with. Recording
+does not run the launcher.
+
 Readiness is `rea inspect-apktool-client`: it runs `apktool --version` and
 reports the resolved launcher, its selection source, and its version. A
 missing launcher reports `capability_unavailable` with the

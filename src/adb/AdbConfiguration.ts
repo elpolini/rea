@@ -13,6 +13,7 @@ import {
 import type { ProviderAvailability } from "../application/AnalysisProvider.js";
 import type { ProviderRejectionCode } from "../contracts/providerSelection.js";
 import type { JsonValue } from "../domain/jsonValue.js";
+import { err, ok, type Result } from "../domain/result.js";
 import { adbCommandCapturedOutput } from "./AdbCommand.js";
 
 /** Environment key selecting the caller's adb binary. */
@@ -28,6 +29,27 @@ export interface AdbBinarySelection {
 }
 
 /**
+ * Parse the caller's explicit adb binary. An unset or blank value is no
+ * selection: adb resolves from PATH.
+ */
+const explicitAdbBinary = (
+  environment: Readonly<Record<string, string | undefined>>,
+): Result<string | undefined, AdbConfigurationFailure> => {
+  const configured = environment[ADB_BINARY_ENV];
+  if (configured === undefined || configured.trim() === "")
+    return ok(undefined);
+  if (!isAbsolute(configured))
+    return err(
+      new AdbConfigurationFailure(
+        "not_absolute",
+        `${ADB_BINARY_ENV} must be an absolute path to the adb binary`,
+        { configured_path: configured },
+      ),
+    );
+  return ok(configured);
+};
+
+/**
  * Resolve the caller-supplied adb binary. `REA_ADB_PATH` must be absolute so
  * the selection stays explicit; without it, adb is resolved from `PATH` by
  * the platform exec at run time, like any bring-your-own tool.
@@ -35,16 +57,27 @@ export interface AdbBinarySelection {
 export const resolveAdbBinary = (
   environment: Readonly<Record<string, string | undefined>>,
 ): AdbBinarySelection => {
-  const configured = environment[ADB_BINARY_ENV];
-  if (configured === undefined || configured.trim() === "")
-    return { binary: "adb", pathSource: "path" };
-  if (!isAbsolute(configured))
-    throw new AdbConfigurationFailure(
-      "not_absolute",
-      `${ADB_BINARY_ENV} must be an absolute path to the adb binary`,
-      { configured_path: configured },
-    );
-  return { binary: configured, pathSource: "environment" };
+  const explicit = explicitAdbBinary(environment);
+  if (!explicit.ok) throw explicit.error;
+  return explicit.value === undefined
+    ? { binary: "adb", pathSource: "path" }
+    : { binary: explicit.value, pathSource: "environment" };
+};
+
+/**
+ * The binary selection an agent registration carries so the registered
+ * server resolves the same adb. Only an explicit, valid REA_ADB_PATH is
+ * published, exactly as the caller spelled it; a PATH-resolved adb and the
+ * ambient PATH are not caller selections. Publishing does not run adb:
+ * readiness stays with `inspect_adb_client`.
+ */
+export const adbRegistrationEnvironment = (
+  environment: Readonly<Record<string, string | undefined>>,
+): Readonly<Record<string, string>> => {
+  const selected = explicitAdbBinary(environment);
+  return selected.ok && selected.value !== undefined
+    ? { [ADB_BINARY_ENV]: selected.value }
+    : {};
 };
 
 export type AdbConfigurationFailureCode =

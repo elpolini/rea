@@ -21,6 +21,14 @@ through the environment:
 export REA_ADB_PATH=/absolute/path/to/adb
 ```
 
+For setup registration, set `REA_ADB_PATH` in the REA process environment
+before running `rea setup`. The approved setup plan records the exact selected
+path in the agent's REA server environment after checking that it is absolute.
+A blank or relative value is not recorded. An adb found on `PATH` is not
+copied either, nor is `PATH` itself: the registered server resolves adb from
+the environment its client starts it with. Recording does not run adb or
+contact a device.
+
 REA never installs the Android SDK, an emulator, or a system image.
 Readiness is `rea inspect-adb-client`: it runs `adb version` and reports the
 resolved binary, its version, and where it was selected from. A missing

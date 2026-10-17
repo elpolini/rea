@@ -17,6 +17,7 @@ import type { ProviderProcessSupervisor } from "../process/ProviderProcess.js";
 import type { ProviderAvailability } from "../application/AnalysisProvider.js";
 import type { ProviderRejectionCode } from "../contracts/providerSelection.js";
 import type { JsonValue } from "../domain/jsonValue.js";
+import { err, ok, type Result } from "../domain/result.js";
 import { gte, valid } from "semver";
 import {
   isWindowsBatchFile,
@@ -37,6 +38,53 @@ export interface ApktoolCommandSelection {
 }
 
 /**
+ * Parse the caller's explicit launcher from a platform environment snapshot.
+ * An unset or blank value is no selection: the launcher resolves from PATH.
+ */
+const explicitApktoolCommand = (
+  selectedEnvironment: Readonly<NodeJS.ProcessEnv>,
+  platform: NodeJS.Platform,
+): Result<string | undefined, ApktoolConfigurationFailure> => {
+  const configured = selectedEnvironment[APKTOOL_COMMAND_ENV];
+  if (configured === undefined || configured.trim() === "")
+    return ok(undefined);
+  if (
+    !(platform === "win32"
+      ? win32.isAbsolute(configured)
+      : isAbsolute(configured))
+  )
+    return err(
+      new ApktoolConfigurationFailure(
+        "not_absolute",
+        `${APKTOOL_COMMAND_ENV} must be an absolute path to the apktool launcher`,
+        { configured_command: configured },
+      ),
+    );
+  return ok(configured);
+};
+
+/**
+ * The launcher selection an agent registration carries so the registered
+ * server resolves the same Apktool. Only an explicit, valid
+ * REA_APKTOOL_COMMAND is published, exactly as the caller spelled it; a
+ * PATH-resolved launcher and the ambient PATH/PATHEXT that located it are not
+ * caller selections. Publishing does not probe the launcher: readiness stays
+ * with `inspect_apktool_client`.
+ */
+export const apktoolRegistrationEnvironment = (
+  environment: Readonly<Record<string, string | undefined>>,
+  platform: NodeJS.Platform = process.platform,
+): Readonly<Record<string, string>> => {
+  const selected = explicitApktoolCommand(
+    snapshotEnvironment(environment, platform),
+    platform,
+  );
+  return selected.ok && selected.value !== undefined
+    ? { [APKTOOL_COMMAND_ENV]: selected.value }
+    : {};
+};
+
+/**
  * Preserve an explicit launcher, or resolve the default Windows command before
  * choosing native versus batch process creation. POSIX keeps execFile's PATH
  * lookup. The resolved selection is reused for the version and decode runs.
@@ -49,20 +97,10 @@ export const resolveApktoolCommand = async (
   if (signal?.aborted === true)
     throw new AnalysisCancelledError("inspect_apktool_client");
   const selectedEnvironment = snapshotEnvironment(environment, platform);
-  const configured = selectedEnvironment[APKTOOL_COMMAND_ENV];
-  if (configured !== undefined && configured.trim() !== "") {
-    if (
-      !(platform === "win32"
-        ? win32.isAbsolute(configured)
-        : isAbsolute(configured))
-    )
-      throw new ApktoolConfigurationFailure(
-        "not_absolute",
-        `${APKTOOL_COMMAND_ENV} must be an absolute path to the apktool launcher`,
-        { configured_command: configured },
-      );
-    return { command: configured, commandSource: "environment" };
-  }
+  const explicit = explicitApktoolCommand(selectedEnvironment, platform);
+  if (!explicit.ok) throw explicit.error;
+  if (explicit.value !== undefined)
+    return { command: explicit.value, commandSource: "environment" };
   if (platform !== "win32")
     return { command: "apktool", commandSource: "path" };
   const extensions = (selectedEnvironment.PATHEXT ?? ".EXE;.COM;.BAT;.CMD")

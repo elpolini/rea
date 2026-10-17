@@ -9,7 +9,9 @@ import { inspectSystemGhidraProvider } from "./ghidra/GhidraDoctor.js";
 import { inspectIdaRegistration } from "./ida/IdaDoctor.js";
 import { inspectKunaProvider } from "./kuna/KunaDoctor.js";
 import { readIdaConfiguration } from "./ida/IdaConfiguration.js";
-import { parseJebMcpEndpoint } from "./jeb/JebMcpEndpoint.js";
+import { jebRegistrationEnvironment } from "./jeb/JebMcpEndpoint.js";
+import { apktoolRegistrationEnvironment } from "./apktool/ApktoolConfiguration.js";
+import { adbRegistrationEnvironment } from "./adb/AdbConfiguration.js";
 import { selectLinuxPrivateDisplayStrategy } from "./hopper/LinuxPrivateDisplayProbe.js";
 import { ok } from "./domain/result.js";
 
@@ -18,17 +20,18 @@ export const createSystemDoctorHost = (
   environment: Readonly<NodeJS.ProcessEnv> = process.env,
   signal?: AbortSignal,
 ): DoctorHost => {
-  const selectedJebEndpoint = environment.REA_JEB_MCP_URL;
-  const selectedJebRegistrationEnvironment: Readonly<Record<string, string>> =
-    selectedJebEndpoint !== undefined &&
-    selectedJebEndpoint.length > 0 &&
-    parseJebMcpEndpoint(selectedJebEndpoint).ok
-      ? { REA_JEB_MCP_URL: selectedJebEndpoint }
-      : {};
+  // Families selected only through the environment have no doctor inspection;
+  // each adapter publishes its own validated caller selection and never an
+  // ambient value such as PATH or TEMP that located or ran the tool.
+  const selectedRegistrationEnvironment: Readonly<Record<string, string>> = {
+    ...jebRegistrationEnvironment(environment),
+    ...apktoolRegistrationEnvironment(environment),
+    ...adbRegistrationEnvironment(environment),
+  };
   return systemDoctorHost({
     environment,
     ...(signal === undefined ? {} : { signal }),
-    providerRegistrationEnvironment: () => selectedJebRegistrationEnvironment,
+    providerRegistrationEnvironment: () => selectedRegistrationEnvironment,
     resolveProviderRequestBudget: (
       analysisProvider,
       registrationEnvironment,
