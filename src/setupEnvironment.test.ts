@@ -12,9 +12,11 @@ import { runSetup } from "./application/Setup.js";
 import { discoverSetupState } from "./application/SetupPlan.js";
 import { options } from "./application/Setup.fixture.js";
 import { systemSetupHost } from "./application/SetupHost.js";
+import type { SkillBundleInspection } from "./application/SkillBundle.js";
 import { systemUninstallHost } from "./application/Uninstall.js";
 import { runUpdateCommand } from "./application/UpdateRuntime.js";
 import { createSystemDoctorHost } from "./doctorRuntime.js";
+import { ok } from "./domain/result.js";
 import { PRODUCT_IDENTITY } from "./identity.js";
 import {
   invokingPackageRunner,
@@ -38,7 +40,18 @@ it("plans setup and uninstall against selected home and client overrides", async
   vi.stubEnv("npm_command", "other");
   try {
     const doctor = createDoctorHostFixture({ homeDirectory: environment.HOME });
-    const host = systemSetupHost(doctor, environment);
+    const host = {
+      ...systemSetupHost(doctor, environment),
+      // This test covers home and client selection, not the generated
+      // `skills/` output, which a clean checkout does not have yet.
+      inspectSkillBundle: (): Promise<SkillBundleInspection> =>
+        Promise.resolve(
+          ok({
+            installation: "package",
+            updateAction: "Run rea setup to update the installed REA skill.",
+          }),
+        ),
+    };
     const result = await runSetup(
       {
         ...options(false),
