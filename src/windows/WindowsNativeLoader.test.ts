@@ -143,7 +143,7 @@ describe("packaged Windows native compatibility", () => {
       available: false,
       failureStage: "artifact",
       reason: expect.stringMatching(
-        /Missing packaged Windows native file native\/windows\/build\/manifest\.json \(ENOENT\).*native\/windows\/build\/rea-windows-x64\.node.*native\/windows\/README\.md/u,
+        /Missing packaged Windows native file native\/windows\/build\/manifest\.json \(ENOENT\)\. In a source checkout, run npm run restore:windows-native .*native\/windows\/build\/rea-windows-x64\.node.*native\/windows\/README\.md/u,
       ),
     });
     expect(value.loads()).toBe(0);

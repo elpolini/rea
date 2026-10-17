@@ -269,6 +269,7 @@
     "test:sqlite": "npm run test:prepare && npm run test:sqlite:run",
     "test:sqlite:run": "vitest run src/application/sqlite/ tests/boundary/sqlite/ tests/acceptance/sqliteDatabaseCli.test.ts tests/boundary/mcp/serverLifecycleMcp.test.ts",
     "build:windows-native": "node scripts/build-windows-native.mjs",
+    "restore:windows-native": "node scripts/restore-windows-native.mjs",
     "verify:windows-native:artifact": "node scripts/verify-windows-native-artifact.mjs",
     "prepublishOnly": "npm run verify:windows-native:artifact",
     "verify:cutter": "npm run build:cached && node scripts/verify-real-cutter.mjs",

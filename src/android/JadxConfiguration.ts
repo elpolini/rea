@@ -23,6 +23,7 @@ import {
   JADX_JVM_OPTIONS_REMEDIATION,
   JADX_OPERATION_TIMEOUT_REMEDIATION,
   JADX_UNSUPPORTED_HOST_REMEDIATION,
+  JADX_WINDOWS_NATIVE_ARTIFACT_REMEDIATION,
   JADX_WINDOWS_NATIVE_REMEDIATION,
 } from "./JadxRelease.js";
 
@@ -97,7 +98,7 @@ export const projectJadxFailureOutcome = (
   switch (kind) {
     case "windows_native_artifact":
       return {
-        remediation: JADX_WINDOWS_NATIVE_REMEDIATION,
+        remediation: JADX_WINDOWS_NATIVE_ARTIFACT_REMEDIATION,
         classification: "missing_dependency",
       };
     case "windows_native_runtime":

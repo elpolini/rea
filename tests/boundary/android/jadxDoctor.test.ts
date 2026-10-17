@@ -395,6 +395,9 @@ it("classifies missing Windows native artifacts as missing dependencies", async 
 
     expect(inspection.checks[0]?.code).toBe("runtime_missing");
     expect(inspection.checks[0]?.classification).toBe("missing_dependency");
+    expect(inspection.checks[0]?.remediation).toContain(
+      "In a source checkout, run npm run restore:windows-native",
+    );
   } finally {
     Object.defineProperty(process, "platform", {
       value: originalPlatform,

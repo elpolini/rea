@@ -33,6 +33,10 @@ export const JADX_OPERATION_TIMEOUT_REMEDIATION = `Set REA_JADX_OPERATION_TIMEOU
 export const JADX_UNSUPPORTED_HOST_REMEDIATION =
   "Use Linux, macOS, or Windows x64 with its bundled native controls for Android JADX analysis.";
 
+/** Remediation when the Windows native artifact is missing or mismatched. */
+export const JADX_WINDOWS_NATIVE_ARTIFACT_REMEDIATION =
+  "Use a matching current Windows x64 REA package with its bundled native controls. In a source checkout, run npm run restore:windows-native to restore the verified same-version artifact. The native failure above identifies the failed constraint; Java installation or registration changes cannot enable a missing native backend.";
+
 /** Remediation when the Windows native backend cannot take process ownership. */
 export const JADX_WINDOWS_NATIVE_REMEDIATION =
   "Use a matching current Windows x64 REA package with its bundled native controls. The native failure above identifies the failed constraint; Java installation or registration changes cannot enable a missing native backend.";

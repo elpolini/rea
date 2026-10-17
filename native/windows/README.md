@@ -29,25 +29,50 @@ without this lane reports Windows native controls as unavailable.
 ## Restore the artifact in a source checkout
 
 The source tree omits `native/windows/build/` from Git. To run Windows
-provider-backed workflows from a checkout without the MinGW build lane, extract
+provider-backed workflows from a checkout without the MinGW build lane, restore
 the two files from the published `rea-agents` tarball whose version exactly
-matches the checkout's `package.json` version. Do not use `latest` or copy files
-from another REA version; the loader verifies the manifest version, ABI,
-architecture, and addon digest before it grants authority.
-
-From the checkout root, replace `<matching-version>` with the `version` in
-`package.json`:
+matches the checkout's `package.json` version. From the checkout root, on a
+Windows, Linux, or macOS host:
 
 ```sh
-npm pack rea-agents@<matching-version>
-tar -xzf rea-agents-<matching-version>.tgz
-mkdir -p native/windows/build
-cp package/native/windows/build/manifest.json native/windows/build/
-cp package/native/windows/build/rea-windows-x64.node native/windows/build/
+npm run restore:windows-native
 ```
 
-This is a manual recovery step. REA does not fetch or install the artifact
-automatically. Alternatively, build it using the Linux/MinGW lane above.
+The command uses the npm registry configured for the checkout and runs, in
+order:
+
+1. Reads the exact `version` from `package.json`. Ranges and dist-tags such as
+   `latest` are rejected; another REA version is never used.
+2. Reads `dist.integrity` with `npm view rea-agents@<version>`, then downloads
+   the tarball with `npm pack --ignore-scripts` into a private temporary
+   directory that it removes afterwards.
+3. Checks that the tarball's SHA-512 matches that registry integrity and the
+   one npm pack reported, and that its `package.json` names
+   `rea-agents@<version>`.
+4. Reads `manifest.json` and `rea-windows-x64.node` from the tarball in
+   memory. The manifest must satisfy the loader's contract with
+   `packageVersion` equal to the checkout version, `platform` `win32`, and
+   `architecture` `x64`. The addon's SHA-256 must equal
+   `manifest.artifactSha256`, and its PE header must be x86-64 PE32+.
+5. Only after every check passes, writes the addon and then its manifest into
+   `native/windows/build/`, each through a temporary file renamed into place.
+
+It prints each verified value and whether each file was created, replaced, or
+left unchanged. An existing identical file is left untouched. An existing file
+that differs, such as the artifact of an earlier version, is refused and
+nothing is written; rerun with `npm run restore:windows-native -- --replace` to
+replace it. A destination that is not a regular file is never replaced. An
+interrupted replacement can leave a new addon beside the old manifest, which
+the loader rejects by digest; rerun the same `--replace` command to complete
+it.
+
+A version that is not published, such as a checkout ahead of the latest
+release, fails without writing anything; build that artifact with the
+Linux/MinGW lane above instead. The loader still verifies the manifest version,
+ABI, architecture, and addon digest before it grants authority.
+
+This is a manual recovery command. No REA build, setup, doctor, or runtime path
+invokes it, and REA never fetches or installs the artifact automatically.
 
 ## Boundaries
 

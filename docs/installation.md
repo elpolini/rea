@@ -827,6 +827,14 @@ entry at file offset 0, on fixed local NTFS volumes. Other raw CPU families rema
 unsupported on Windows.
 The npm package bundles native Job Object ownership, protected private runtime
 DACLs, and handle-based path admission; no separate addon installation is needed.
+A source checkout omits that addon, so these controls, Windows Ghidra, and
+Android JADX report it missing. Run `npm run restore:windows-native` from the
+checkout to restore it from the published `rea-agents` tarball of the exact
+`package.json` version after verifying its registry integrity, manifest,
+architecture, and SHA-256; add `-- --replace` to replace a different existing
+artifact. REA never runs this download itself. See
+[native controls](https://github.com/morluto/rea/blob/main/native/windows/README.md#restore-the-artifact-in-a-source-checkout)
+for each check, or build the artifact with its Linux/MinGW lane.
 See the [Windows Ghidra P0 guide](windows-ghidra-p0.md) for verified scope and
 limitations.
 

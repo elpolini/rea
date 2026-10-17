@@ -230,11 +230,17 @@ the artifact lock until every command descendant has exited. Without the
 artifacts, those controls are unavailable even after a successful runtime
 build.
 
-Follow the [Windows native build guide](native/windows/README.md#build) before
-running those workflows from source. The artifact build requires Linux,
-MinGW-w64, and `tar`; the build script does not run on Windows. See that guide
-for the build and artifact-verification commands and the separate real Windows
-verification prerequisites. Keep the generated addon and manifest uncommitted.
+To use the published artifact of the checkout's exact version, run
+`npm run restore:windows-native`. It verifies the registry integrity, manifest,
+architecture, and addon SHA-256 before writing, and refuses to overwrite a
+different existing artifact unless `-- --replace` is passed; see
+[restoring the artifact](native/windows/README.md#restore-the-artifact-in-a-source-checkout).
+It is a manual command that nothing else runs. To build the artifact instead,
+follow the [Windows native build guide](native/windows/README.md#build). The
+artifact build requires Linux, MinGW-w64, and `tar`; the build script does not
+run on Windows. See that guide for the build and artifact-verification commands
+and the separate real Windows verification prerequisites. Keep the restored or
+generated addon and manifest uncommitted.
 
 ## Documentation website
 
