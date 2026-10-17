@@ -9,9 +9,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatRestoreReport,
+  formatRestoreWarnings,
   parseRestoreArguments,
   parseWindowsNativeManifest,
   restoreWindowsNative,
+  WindowsNativeRestoreError,
+  type ArtifactWriter,
+  type GitRunner,
   type NpmRunner,
   type WindowsNativeRestoreErrorCode,
 } from "../../../scripts/lib/windows-native-restore.mjs";
@@ -23,6 +27,8 @@ import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
 const VERSION = "1.2.3";
 const SPEC = `rea-agents@${VERSION}`;
+const TAG = `rea-agents-${VERSION}`;
+const TAG_COMMIT = "0123456789abcdef0123456789abcdef01234567";
 const TARBALL = `rea-agents-${VERSION}.tgz`;
 const MANIFEST_MEMBER = "package/native/windows/build/manifest.json";
 const ARTIFACT_MEMBER = "package/native/windows/build/rea-windows-x64.node";
@@ -182,6 +188,62 @@ const fakeNpm = (
   return { npm, calls };
 };
 
+interface GitFixture {
+  /** Fail every command as a missing executable or a non-repository. */
+  readonly failure?: "missing_git" | "not_repository";
+  /** `git rev-parse --show-prefix` output. */
+  readonly prefix?: string;
+  readonly tag?: "present" | "missing";
+  /** Output of `git diff --name-only`, `git log`, and `git status`. */
+  readonly diff?: string;
+  readonly log?: string;
+  readonly status?: string;
+}
+
+/** A git runner answering the comparison commands from fixed facts. */
+const fakeGit = (fixture: GitFixture = {}) => {
+  const calls: string[][] = [];
+  const git: GitRunner = (arguments_) => {
+    calls.push([...arguments_]);
+    if (fixture.failure === "missing_git")
+      return Promise.reject(
+        Object.assign(new Error("spawn git ENOENT"), { code: "ENOENT" }),
+      );
+    if (fixture.failure === "not_repository")
+      return Promise.reject(
+        Object.assign(new Error("Command failed: git rev-parse"), {
+          code: 128,
+          stderr:
+            "fatal: not a git repository (or any of the parent directories): .git\n",
+        }),
+      );
+    const [command, option] = arguments_;
+    if (command === "rev-parse" && option === "--show-prefix")
+      return Promise.resolve({ stdout: `${fixture.prefix ?? ""}\n` });
+    if (command === "rev-parse")
+      return fixture.tag === "missing"
+        ? Promise.reject(
+            Object.assign(new Error("Command failed: git rev-parse"), {
+              code: 1,
+              stderr: "",
+            }),
+          )
+        : Promise.resolve({ stdout: `${TAG_COMMIT}\n` });
+    const output =
+      command === "diff"
+        ? fixture.diff
+        : command === "log"
+          ? fixture.log
+          : command === "status"
+            ? fixture.status
+            : undefined;
+    if (output === undefined && !["diff", "log", "status"].includes(command!))
+      return Promise.reject(new Error(`unexpected git ${command}`));
+    return Promise.resolve({ stdout: output ?? "" });
+  };
+  return { git, calls };
+};
+
 const checkout = async (
   packageJson: unknown = { name: "rea-agents", version: VERSION },
 ) => {
@@ -195,12 +257,24 @@ const checkout = async (
 
 type Checkout = Awaited<ReturnType<typeof checkout>>;
 
-const restore = (target: Checkout, npm: NpmRunner, replace = false) =>
+const restore = (
+  target: Checkout,
+  npm: NpmRunner,
+  replace = false,
+  options: {
+    readonly git?: GitRunner;
+    readonly write?: ArtifactWriter;
+    readonly acceptReleaseArtifact?: boolean;
+  } = {},
+) =>
   restoreWindowsNative({
     root: target.root,
     npm,
     replace,
+    // A checkout whose native source matches its release tag.
+    git: fakeGit().git,
     temporaryParent: target.downloads,
+    ...options,
   });
 
 const expectFailure = async (
@@ -680,16 +754,25 @@ describe("restore:windows-native checkout and npm boundaries", () => {
 });
 
 describe("restore:windows-native arguments and manifest contract", () => {
-  it("accepts only --replace and --help", () => {
-    expect(parseRestoreArguments([])).toEqual({ help: false, replace: false });
+  it("accepts only --replace, --accept-release-artifact, and --help", () => {
+    expect(parseRestoreArguments([])).toEqual({
+      help: false,
+      replace: false,
+      acceptReleaseArtifact: false,
+    });
     expect(parseRestoreArguments(["--replace"])).toEqual({
       help: false,
       replace: true,
+      acceptReleaseArtifact: false,
     });
+    expect(
+      parseRestoreArguments(["--accept-release-artifact", "--replace"]),
+    ).toEqual({ help: false, replace: true, acceptReleaseArtifact: true });
     expect(parseRestoreArguments(["--help"])).toMatchObject({ help: true });
     for (const arguments_ of [
       ["--force"],
       ["--replace", "--replace"],
+      ["--accept-release-artifact", "--accept-release-artifact"],
       ["latest"],
     ])
       expect(() => parseRestoreArguments(arguments_)).toThrow(
@@ -800,6 +883,379 @@ describe("restore:windows-native arguments and manifest contract", () => {
   });
 });
 
+const PATHSPECS = [
+  "native/windows/src",
+  "src/windows",
+  ":(exclude)src/windows/*.test.ts",
+];
+/** Native source committed after the release tag. */
+const AHEAD: GitFixture = {
+  diff: "native/windows/src/filesystem.cc\nsrc/windows/WindowsPrivateRuntime.ts\n",
+  log: "296589db1\tfix(windows): normalize drive-absolute runtime roots\n5f9ac2c98\tfix(windows): retain primary snapshot failures\n",
+};
+
+describe("restore:windows-native release source refusal", () => {
+  it("refuses a release addon that predates the checkout's native source before downloading", async () => {
+    const target = await checkout();
+    const { npm, calls } = fakeNpm(packageFixture().tarball);
+    const { git, calls: gitCalls } = fakeGit(AHEAD);
+    const refused = restore(target, npm, false, { git });
+
+    await expectFailure(refused, "native_source_differs");
+    await expect(refused).rejects.toThrow(
+      /differs from rea-agents-1\.2\.3\. package\.json still declares 1\.2\.3 because release-please bumps the version only when it cuts the next release[\s\S]*\n {2}296589db1 fix\(windows\): normalize drive-absolute runtime roots\n {2}5f9ac2c98 fix\(windows\): retain primary snapshot failures\nBuild the addon from this checkout with the Linux\/MinGW lane in native\/windows\/README\.md#build instead\. To install the published 1\.2\.3 addon anyway, rerun with "npm run restore:windows-native -- --accept-release-artifact"\. Nothing was downloaded or written\.$/u,
+    );
+    await expect(refused).rejects.toMatchObject({
+      details: {
+        tag: TAG,
+        commits: [
+          {
+            commit: "296589db1",
+            subject: "fix(windows): normalize drive-absolute runtime roots",
+          },
+          {
+            commit: "5f9ac2c98",
+            subject: "fix(windows): retain primary snapshot failures",
+          },
+        ],
+        files: [
+          "native/windows/src/filesystem.cc",
+          "src/windows/WindowsPrivateRuntime.ts",
+        ],
+        uncommitted: [],
+      },
+    });
+    expect(calls).toEqual([]);
+    expect(gitCalls).toEqual([
+      ["rev-parse", "--show-prefix"],
+      ["rev-parse", "--verify", "--quiet", `refs/tags/${TAG}^{commit}`],
+      [
+        "diff",
+        "--name-only",
+        "--no-renames",
+        TAG_COMMIT,
+        "HEAD",
+        "--",
+        ...PATHSPECS,
+      ],
+      ["log", "--format=%h%x09%s", `${TAG_COMMIT}..HEAD`, "--", ...PATHSPECS],
+      ["status", "--porcelain=v1", "--untracked-files=all", "--", ...PATHSPECS],
+    ]);
+    await expectUntouched(target);
+  });
+
+  it.each<[string, GitFixture, RegExp]>([
+    [
+      "files that differ without commits ahead of the tag",
+      { diff: "native/windows/src/addon.cc\n" },
+      /\nFiles that differ between rea-agents-1\.2\.3 and HEAD: native\/windows\/src\/addon\.cc\n/u,
+    ],
+    [
+      "uncommitted and untracked native source",
+      {
+        status:
+          " M native/windows/src/addon.cc\n?? native/windows/src/new.cc\n",
+      },
+      /\nUncommitted changes: M native\/windows\/src\/addon\.cc, \?\? native\/windows\/src\/new\.cc\n/u,
+    ],
+  ])("refuses %s", async (_case, fixture, message) => {
+    const target = await checkout();
+    const { npm, calls } = fakeNpm(packageFixture().tarball);
+    const refused = restore(target, npm, false, { git: fakeGit(fixture).git });
+    await expectFailure(refused, "native_source_differs");
+    await expect(refused).rejects.toThrow(message);
+    expect(calls).toEqual([]);
+    await expectUntouched(target);
+  });
+
+  it("bounds the inline commit list and keeps every commit in the details", async () => {
+    const target = await checkout();
+    const commits = Array.from(
+      { length: 25 },
+      (_, index) =>
+        `c${String(index).padStart(2, "0")}\tfix(windows): change ${index}`,
+    );
+    const refused = restore(
+      target,
+      fakeNpm(packageFixture().tarball).npm,
+      true,
+      {
+        git: fakeGit({
+          diff: "native/windows/src/addon.cc\n",
+          log: commits.join("\n"),
+        }).git,
+      },
+    );
+    await expect(refused).rejects.toThrow(
+      /c19 fix\(windows\): change 19\n {2}\.\.\.and 5 more \(git log rea-agents-1\.2\.3\.\.HEAD -- native\/windows\/src src\/windows\)\n[\s\S]*"npm run restore:windows-native -- --accept-release-artifact --replace"/u,
+    );
+    await expect(refused).rejects.not.toThrow(/c20 fix/u);
+    await expect(refused).rejects.toMatchObject({
+      details: {
+        commits: expect.arrayContaining([
+          { commit: "c24", subject: "fix(windows): change 24" },
+        ]),
+      },
+    });
+  });
+});
+
+describe("restore:windows-native release source reporting", () => {
+  it("installs the release addon only after an explicit acceptance and warns what it lacks", async () => {
+    const target = await checkout();
+    const fixture = packageFixture();
+    const report = await restore(target, fakeNpm(fixture.tarball).npm, false, {
+      git: fakeGit(AHEAD).git,
+      acceptReleaseArtifact: true,
+    });
+    expect(await readFile(join(target.build, "rea-windows-x64.node"))).toEqual(
+      fixture.artifact,
+    );
+    expect(report.sourceComparison).toMatchObject({
+      state: "differs",
+      tag: TAG,
+      commits: [{ commit: "296589db1" }, { commit: "5f9ac2c98" }],
+    });
+    expect(formatRestoreReport(report)).toContain(
+      "Native source:\n  differs from rea-agents-1.2.3; the published addon was accepted with --accept-release-artifact (native/windows/src and src/windows, excluding *.test.ts)\n",
+    );
+    expect(formatRestoreWarnings(report)).toMatch(
+      /^warning: This checkout's native source \(native\/windows\/src and src\/windows, excluding \*\.test\.ts\) differs from rea-agents-1\.2\.3\.[\s\S]*296589db1[\s\S]*The installed addon is the published rea-agents@1\.2\.3 build; build it from this checkout with the Linux\/MinGW lane/u,
+    );
+  });
+
+  it("reports a matching release tag without warnings", async () => {
+    const target = await checkout();
+    const report = await restore(target, fakeNpm(packageFixture().tarball).npm);
+    expect(report.sourceComparison).toEqual({ state: "matches", tag: TAG });
+    expect(formatRestoreReport(report)).toContain(
+      "Native source:\n  matches rea-agents-1.2.3 at HEAD with no uncommitted changes (native/windows/src and src/windows, excluding *.test.ts)\n",
+    );
+    expect(formatRestoreWarnings(report)).toBe("");
+  });
+
+  it.each<[string, GitFixture, RegExp]>([
+    [
+      "git is missing",
+      { failure: "missing_git" },
+      /^git is not available on PATH$/u,
+    ],
+    [
+      "the checkout is not a Git work tree",
+      { failure: "not_repository" },
+      /^git could not read this checkout as a work tree \(fatal: not a git repository/u,
+    ],
+    [
+      "the release tag is absent",
+      { tag: "missing" },
+      /^the tag rea-agents-1\.2\.3 is not present in this checkout \(fetch it with "git fetch origin tag rea-agents-1\.2\.3" to compare\)$/u,
+    ],
+    [
+      "the checkout is a subdirectory of another work tree",
+      { prefix: "vendor/rea/" },
+      /^the checkout root is the subdirectory vendor\/rea\/ of another Git work tree/u,
+    ],
+  ])(
+    "restores but says explicitly that the source was not compared when %s",
+    async (_case, fixture, reason) => {
+      const target = await checkout();
+      const { npm, calls } = fakeNpm(packageFixture().tarball);
+      const report = await restore(target, npm, false, {
+        git: fakeGit(fixture).git,
+      });
+      expect(calls.map(([command]) => command)).toEqual(["view", "pack"]);
+      expect(report.sourceComparison).toMatchObject({
+        state: "unknown",
+        tag: TAG,
+        reason: expect.stringMatching(reason),
+      });
+      expect(formatRestoreReport(report)).toContain(
+        "Native source:\n  not compared with rea-agents-1.2.3: ",
+      );
+      expect(formatRestoreWarnings(report)).toMatch(
+        /^warning: Could not compare this checkout's native source \(native\/windows\/src and src\/windows, excluding \*\.test\.ts\) with rea-agents-1\.2\.3: .+\. If this checkout changed it after that release, the installed rea-agents@1\.2\.3 addon does not contain those changes; build it with the Linux\/MinGW lane in native\/windows\/README\.md#build instead\.\n$/u,
+      );
+    },
+  );
+});
+
+describe("restore:windows-native release source with Git", () => {
+  it("compares the release tag of a real Git checkout", async () => {
+    const target = await checkout();
+    const git = (...arguments_: string[]) =>
+      promisify(execFile)(
+        "git",
+        [
+          "-c",
+          "user.name=REA Test",
+          "-c",
+          "user.email=rea-test@example.invalid",
+          "-c",
+          "commit.gpgsign=false",
+          "-c",
+          "tag.gpgsign=false",
+          ...arguments_,
+        ],
+        { cwd: target.root, windowsHide: true },
+      );
+    const write = (path: string, text: string) =>
+      mkdir(join(target.root, path, ".."), { recursive: true }).then(() =>
+        writeFile(join(target.root, path), text),
+      );
+    await git("init", "--quiet");
+    await write("native/windows/src/addon.cc", "// released\n");
+    await write("src/windows/WindowsNativeLoader.ts", "export {};\n");
+    await git("add", "-A");
+    await git("commit", "--quiet", "-m", "chore: release 1.2.3");
+    const { npm } = fakeNpm(packageFixture().tarball);
+    const run = (acceptReleaseArtifact = false) =>
+      restoreWindowsNative({
+        root: target.root,
+        npm,
+        acceptReleaseArtifact,
+        temporaryParent: target.downloads,
+      });
+
+    expect((await run()).sourceComparison).toMatchObject({
+      state: "unknown",
+      reason: expect.stringContaining(`the tag ${TAG} is not present`),
+    });
+
+    // An annotated tag peels to its commit; test-only changes are excluded.
+    await git("tag", "-a", TAG, "-m", "rea-agents 1.2.3");
+    await write("src/windows/WindowsNativeLoader.test.ts", "export {};\n");
+    await git("add", "-A");
+    await git("commit", "--quiet", "-m", "test(windows): cover the loader");
+    expect((await run()).sourceComparison).toEqual({
+      state: "matches",
+      tag: TAG,
+    });
+
+    await write("native/windows/src/addon.cc", "// unreleased\n");
+    await expect(run()).rejects.toMatchObject({
+      code: "native_source_differs",
+      details: { commits: [], uncommitted: [" M native/windows/src/addon.cc"] },
+    });
+
+    await git("commit", "--quiet", "-am", "fix(windows): change the addon");
+    await expect(run()).rejects.toMatchObject({
+      code: "native_source_differs",
+      message: expect.stringMatching(
+        /\n {2}[0-9a-f]{7,} fix\(windows\): change the addon\n/u,
+      ),
+      details: {
+        files: ["native/windows/src/addon.cc"],
+        uncommitted: [],
+      },
+    });
+    expect((await run(true)).sourceComparison).toMatchObject({
+      state: "differs",
+      commits: [{ subject: "fix(windows): change the addon" }],
+    });
+  });
+});
+
+describe("restore:windows-native destination in use", () => {
+  /** A checkout holding an earlier addon that the restore must replace. */
+  const withPreviousArtifact = async () => {
+    const target = await checkout();
+    await mkdir(target.build, { recursive: true });
+    const previous = packageFixture({
+      artifact: Buffer.concat([peImage(), Buffer.from("loaded")]),
+      manifest: { packageVersion: "1.2.2" },
+    });
+    await writeFile(
+      join(target.build, "manifest.json"),
+      previous.manifestBytes,
+    );
+    await writeFile(
+      join(target.build, "rea-windows-x64.node"),
+      previous.artifact,
+    );
+    return { target, previous };
+  };
+  const refusing =
+    (errno: string, refused: string): ArtifactWriter =>
+    (path, bytes) =>
+      path.endsWith(refused)
+        ? Promise.reject(
+            Object.assign(
+              new Error(
+                `${errno}: operation not permitted, rename -> '${path}'`,
+              ),
+              { code: errno },
+            ),
+          )
+        : writeFile(path, bytes);
+
+  it.each(["EPERM", "EBUSY", "EACCES"])(
+    "maps %s while replacing a loaded addon to destination_in_use",
+    async (errno) => {
+      const { target, previous } = await withPreviousArtifact();
+      const failed = restore(
+        target,
+        fakeNpm(packageFixture().tarball).npm,
+        true,
+        {
+          write: refusing(errno, "rea-windows-x64.node"),
+        },
+      );
+      await expectFailure(failed, "destination_in_use");
+      await expect(failed).rejects.toThrow(
+        new RegExp(
+          `^Could not write native/windows/build/rea-windows-x64\\.node \\(${errno}\\): another process is using it, or this user cannot write it\\. Windows refuses to replace an addon that a running process has loaded\\. Stop the REA processes of this checkout, including its MCP server and any run-exclusive command such as npm run build:cached, then rerun "npm run restore:windows-native -- --replace"\\. Nothing was written\\.$`,
+          "u",
+        ),
+      );
+      await expect(failed).rejects.toMatchObject({
+        details: {
+          file: "native/windows/build/rea-windows-x64.node",
+          errno,
+          written: [],
+        },
+        cause: { code: errno },
+      });
+      expect(
+        await readFile(join(target.build, "rea-windows-x64.node")),
+      ).toEqual(previous.artifact);
+      expect(await readFile(join(target.build, "manifest.json"))).toEqual(
+        previous.manifestBytes,
+      );
+      await expect(readdir(target.downloads)).resolves.toEqual([]);
+    },
+  );
+
+  it("names the addon already written when its manifest is refused", async () => {
+    const { target } = await withPreviousArtifact();
+    const failed = restore(
+      target,
+      fakeNpm(packageFixture().tarball).npm,
+      true,
+      {
+        write: refusing("EBUSY", "manifest.json"),
+      },
+    );
+    await expectFailure(failed, "destination_in_use");
+    await expect(failed).rejects.toThrow(
+      /native\/windows\/build\/rea-windows-x64\.node was already written; the loader rejects the mismatched pair until the restore completes\.$/u,
+    );
+  });
+
+  it("keeps other write failures untagged", async () => {
+    const { target } = await withPreviousArtifact();
+    const failed = restore(
+      target,
+      fakeNpm(packageFixture().tarball).npm,
+      true,
+      {
+        write: refusing("ENOSPC", "rea-windows-x64.node"),
+      },
+    );
+    await expect(failed).rejects.toMatchObject({ code: "ENOSPC" });
+    await expect(failed).rejects.not.toBeInstanceOf(WindowsNativeRestoreError);
+  });
+});
+
 describe("restore:windows-native entry point", () => {
   const command = (arguments_: readonly string[]) =>
     promisify(execFile)(process.execPath, [
@@ -810,6 +1266,7 @@ describe("restore:windows-native entry point", () => {
   it("prints help without contacting npm", async () => {
     const { stdout } = await command(["--help"]);
     expect(stdout).toContain("Usage: npm run restore:windows-native");
+    expect(stdout).toContain("--accept-release-artifact");
   });
 
   it("fails with the tagged reason for an unknown argument", async () => {

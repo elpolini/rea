@@ -35,7 +35,7 @@ export const JADX_UNSUPPORTED_HOST_REMEDIATION =
 
 /** Remediation when the Windows native artifact is missing or mismatched. */
 export const JADX_WINDOWS_NATIVE_ARTIFACT_REMEDIATION =
-  "Use a matching current Windows x64 REA package with its bundled native controls. In a source checkout, run npm run restore:windows-native to restore the verified same-version artifact. The native failure above identifies the failed constraint; Java installation or registration changes cannot enable a missing native backend.";
+  "Use a matching current Windows x64 REA package with its bundled native controls. In a source checkout, run npm run restore:windows-native to restore the published artifact of the package.json release; when the checkout changed its native source after that release, the command refuses and the artifact must be built with native/windows/README.md. The native failure above identifies the failed constraint; Java installation or registration changes cannot enable a missing native backend.";
 
 /** Remediation when the Windows native backend cannot take process ownership. */
 export const JADX_WINDOWS_NATIVE_REMEDIATION =

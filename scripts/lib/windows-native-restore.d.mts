@@ -16,7 +16,9 @@ export type WindowsNativeRestoreErrorCode =
   | "digest_mismatch"
   | "artifact_invalid"
   | "unsafe_destination"
-  | "existing_artifact_differs";
+  | "existing_artifact_differs"
+  | "native_source_differs"
+  | "destination_in_use";
 
 /** Expected restore failure with a stable tag for callers and tests. */
 export class WindowsNativeRestoreError extends Error {
@@ -33,10 +35,11 @@ export class WindowsNativeRestoreError extends Error {
 /** Command-line help for the explicit, manual restore command. */
 export const RESTORE_USAGE: string;
 
-/** Parse the command's arguments; only `--replace` changes behavior. */
+/** Parse the command's arguments; each flag may appear once. */
 export function parseRestoreArguments(arguments_: readonly string[]): {
   readonly help: boolean;
   readonly replace: boolean;
+  readonly acceptReleaseArtifact: boolean;
 };
 
 /** The manifest contract shared with `windowsNativeManifestSchema`. */
@@ -61,6 +64,51 @@ export type NpmRunner = (
   arguments_: readonly string[],
 ) => Promise<{ readonly stdout: string }>;
 
+/**
+ * Runs one git command in the checkout root and resolves with its standard
+ * output. A rejection carries the exit status or spawn errno in `code` and
+ * git's diagnostic in `stderr`.
+ */
+export type GitRunner = (
+  arguments_: readonly string[],
+) => Promise<{ readonly stdout: string }>;
+
+/** Writes one verified file into place atomically. */
+export type ArtifactWriter = (path: string, bytes: Buffer) => Promise<void>;
+
+/** One commit that changed the compared native source after the release tag. */
+export interface NativeSourceCommit {
+  readonly commit: string;
+  readonly subject: string;
+}
+
+/**
+ * How this checkout's native source compares with the release tag of its
+ * package.json version. `unknown` keeps the reason Git could not establish it.
+ */
+export type NativeSourceComparison =
+  | { readonly state: "matches"; readonly tag: string }
+  | {
+      readonly state: "differs";
+      readonly tag: string;
+      readonly commits: readonly NativeSourceCommit[];
+      /** Files that differ between the tag and HEAD. */
+      readonly files: readonly string[];
+      /** `git status --porcelain` lines for uncommitted changes. */
+      readonly uncommitted: readonly string[];
+    }
+  | {
+      readonly state: "unknown";
+      readonly tag: string;
+      readonly reason: string;
+    };
+
+/** Compare the checkout's native source with `rea-agents-<version>`. */
+export function compareNativeSourceWithRelease(
+  git: GitRunner,
+  version: string,
+): Promise<NativeSourceComparison>;
+
 /** What the restore verified and what it changed in the checkout. */
 export interface WindowsNativeRestoreReport {
   readonly spec: string;
@@ -78,15 +126,26 @@ export interface WindowsNativeRestoreReport {
   }[];
   /** Present when the private download directory could not be removed. */
   readonly retainedDownload?: string;
+  /** Native source comparison established before the download. */
+  readonly sourceComparison: NativeSourceComparison;
 }
 
 /** Restore a source checkout's Windows native controls from its exact release. */
 export function restoreWindowsNative(options: {
   readonly root: string;
   readonly replace?: boolean;
+  /** Install the release addon even when the checkout's native source differs. */
+  readonly acceptReleaseArtifact?: boolean;
   readonly npm?: NpmRunner;
+  readonly git?: GitRunner;
+  readonly write?: ArtifactWriter;
   readonly temporaryParent?: string;
 }): Promise<WindowsNativeRestoreReport>;
 
 /** Describe exactly what was verified and what changed in the checkout. */
 export function formatRestoreReport(report: WindowsNativeRestoreReport): string;
+
+/** `warning:` lines for an accepted or unknown comparison and a retained download. */
+export function formatRestoreWarnings(
+  report: WindowsNativeRestoreReport,
+): string;

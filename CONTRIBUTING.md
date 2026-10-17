@@ -230,10 +230,18 @@ the artifact lock until every command descendant has exited. Without the
 artifacts, those controls are unavailable even after a successful runtime
 build.
 
-To use the published artifact of the checkout's exact version, run
-`npm run restore:windows-native`. It verifies the registry integrity, manifest,
+To use the published artifact of the checkout's `package.json` version, run
+`npm run restore:windows-native`. That version is the last release:
+release-please bumps it only when it cuts the next release, so the published
+addon lacks any later change to the native source. The command compares
+`native/windows/src` and `src/windows` with the `rea-agents-<version>` tag
+first and refuses when they differ, listing the commits, unless
+`-- --accept-release-artifact` is passed; build the artifact instead when you
+change that source. It verifies the registry integrity, manifest,
 architecture, and addon SHA-256 before writing, and refuses to overwrite a
-different existing artifact unless `-- --replace` is passed; see
+different existing artifact unless `-- --replace` is passed. Stop the
+checkout's REA processes (its MCP server and `run-exclusive` commands) before
+replacing a loaded addon; otherwise it reports `destination_in_use`. See
 [restoring the artifact](native/windows/README.md#restore-the-artifact-in-a-source-checkout).
 It is a manual command that nothing else runs. To build the artifact instead,
 follow the [Windows native build guide](native/windows/README.md#build). The

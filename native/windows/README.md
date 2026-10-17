@@ -38,38 +38,65 @@ Windows, Linux, or macOS host:
 npm run restore:windows-native
 ```
 
+That version names the last release, not the checkout's source:
+release-please bumps `package.json` only when it cuts the next release, so a
+checkout with unreleased commits still declares the published version, and
+the published addon can be older than the checkout's native source. The
+command therefore compares that source with the release tag before it
+downloads anything.
+
 The command uses the npm registry configured for the checkout and runs, in
 order:
 
 1. Reads the exact `version` from `package.json`. Ranges and dist-tags such as
    `latest` are rejected; another REA version is never used.
-2. Reads `dist.integrity` with `npm view rea-agents@<version>`, then downloads
+2. Compares `native/windows/src` and `src/windows` (excluding `*.test.ts`)
+   between the Git tag `rea-agents-<version>` and `HEAD`, including
+   uncommitted and untracked changes. When they differ, it lists the commits
+   after the tag that changed them and refuses with `native_source_differs`;
+   build the addon with the Linux/MinGW lane above instead, or rerun with
+   `npm run restore:windows-native -- --accept-release-artifact` to install
+   the published addon anyway. When Git is unavailable, the checkout is not a
+   Git work tree, or the tag is not present (for example in a shallow clone;
+   fetch it with `git fetch origin tag rea-agents-<version>`), the report and a
+   warning say that the source was not compared.
+3. Reads `dist.integrity` with `npm view rea-agents@<version>`, then downloads
    the tarball with `npm pack --ignore-scripts` into a private temporary
    directory that it removes afterwards.
-3. Checks that the tarball's SHA-512 matches that registry integrity and the
+4. Checks that the tarball's SHA-512 matches that registry integrity and the
    one npm pack reported, and that its `package.json` names
    `rea-agents@<version>`.
-4. Reads `manifest.json` and `rea-windows-x64.node` from the tarball in
+5. Reads `manifest.json` and `rea-windows-x64.node` from the tarball in
    memory. The manifest must satisfy the loader's contract with
    `packageVersion` equal to the checkout version, `platform` `win32`, and
    `architecture` `x64`. The addon's SHA-256 must equal
    `manifest.artifactSha256`, and its PE header must be x86-64 PE32+.
-5. Only after every check passes, writes the addon and then its manifest into
+6. Only after every check passes, writes the addon and then its manifest into
    `native/windows/build/`, each through a temporary file renamed into place.
 
-It prints each verified value and whether each file was created, replaced, or
-left unchanged. An existing identical file is left untouched. An existing file
-that differs, such as the artifact of an earlier version, is refused and
-nothing is written; rerun with `npm run restore:windows-native -- --replace` to
-replace it. A destination that is not a regular file is never replaced. An
-interrupted replacement can leave a new addon beside the old manifest, which
-the loader rejects by digest; rerun the same `--replace` command to complete
-it.
+It prints each verified value, the source comparison, and whether each file
+was created, replaced, or left unchanged. An existing identical file is left
+untouched. An existing file that differs, such as the artifact of an earlier
+version, is refused and nothing is written; rerun with
+`npm run restore:windows-native -- --replace` to replace it. A destination
+that is not a regular file is never replaced. An interrupted replacement can
+leave a new addon beside the old manifest, which the loader rejects by digest;
+rerun the same `--replace` command to complete it.
 
-A version that is not published, such as a checkout ahead of the latest
-release, fails without writing anything; build that artifact with the
-Linux/MinGW lane above instead. The loader still verifies the manifest version,
-ABI, architecture, and addon digest before it grants authority.
+Windows refuses to replace an addon that a running process has loaded. When
+writing a file fails with `EPERM`, `EBUSY`, or `EACCES`, the command reports
+`destination_in_use`, names the file, and says which files were already
+written. Stop the REA processes of that checkout, including its MCP server and
+any `run-exclusive` command such as `npm run build:cached`, then rerun the
+same command. `EACCES` can also mean that the user cannot write the
+destination.
+
+A version that is not published, such as a fork's own version, fails without
+writing anything; build that artifact with the Linux/MinGW lane above instead.
+The loader still verifies the manifest version, ABI, architecture, and addon
+digest before it grants authority, but it cannot tell a restored release addon
+from one built from the checkout's newer source; only the comparison in step 2
+does.
 
 This is a manual recovery command. No REA build, setup, doctor, or runtime path
 invokes it, and REA never fetches or installs the artifact automatically.

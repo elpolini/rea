@@ -895,7 +895,10 @@ Android JADX report it missing. Run `npm run restore:windows-native` from the
 checkout to restore it from the published `rea-agents` tarball of the exact
 `package.json` version after verifying its registry integrity, manifest,
 architecture, and SHA-256; add `-- --replace` to replace a different existing
-artifact. REA never runs this download itself. See
+artifact. That version is the last release until the next one is cut, so the
+command refuses when the checkout changed `native/windows/src` or
+`src/windows` after the `rea-agents-<version>` tag; build the artifact then.
+REA never runs this download itself. See
 [native controls](https://github.com/morluto/rea/blob/main/native/windows/README.md#restore-the-artifact-in-a-source-checkout)
 for each check, or build the artifact with its Linux/MinGW lane.
 See the [Windows Ghidra P0 guide](windows-ghidra-p0.md) for verified scope and

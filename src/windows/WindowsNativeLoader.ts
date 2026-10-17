@@ -88,7 +88,7 @@ export interface WindowsNativeLoadHost {
 }
 
 const missingWindowsNativeFileReason = (file: string): string =>
-  `Missing packaged Windows native file native/windows/build/${file} (ENOENT). In a source checkout, run npm run restore:windows-native to restore both native/windows/build/manifest.json and native/windows/build/rea-windows-x64.node from the verified rea-agents@${PACKAGE_METADATA.version} tarball, or build them with native/windows/README.md; no native artifact was loaded.`;
+  `Missing packaged Windows native file native/windows/build/${file} (ENOENT). In a source checkout, run npm run restore:windows-native to restore both native/windows/build/manifest.json and native/windows/build/rea-windows-x64.node from the verified rea-agents@${PACKAGE_METADATA.version} tarball (it refuses when the checkout changed its native source after that release), or build them with native/windows/README.md; no native artifact was loaded.`;
 
 const readPackagedWindowsNativeFile = <T>(file: string, read: () => T): T => {
   try {
