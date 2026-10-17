@@ -1,5 +1,6 @@
 import {
   SUPPORTED_NODE_VERSION_PROSE,
+  nodeRuntimeRemediation,
   supportsNodeVersion,
 } from "../domain/runtimeVersion.js";
 import {
@@ -30,7 +31,7 @@ export const collectDoctorDiagnostics = async (
   target: string | undefined,
   host: DoctorHost,
 ): Promise<DoctorDiagnostics> => {
-  const checks: DoctorCheck[] = [nodeCheck(host)];
+  const checks: DoctorCheck[] = [await nodeCheck(host)];
   checks.push(await hostCheck(host));
   const temporaryStorage = await host.temporaryStorage?.();
   if (temporaryStorage !== undefined)
@@ -100,25 +101,31 @@ export const doctorHealthy = (
 };
 
 /** Bun passes when its reported Node.js compatibility version is supported. */
-const nodeCheck = ({ runtime }: DoctorHost): DoctorCheck => {
+const nodeCheck = async (host: DoctorHost): Promise<DoctorCheck> => {
+  const { runtime } = host;
+  const supported = supportsNodeVersion(
+    runtime.id === "node" ? runtime.version : runtime.nodeCompatibilityVersion,
+  );
+  // Only a failed check reports remediation, so only it reads the pin.
   const failure = {
-    remediation: `Install ${SUPPORTED_NODE_VERSION_PROSE}.`,
+    remediation: supported
+      ? ""
+      : nodeRuntimeRemediation({
+          release: SUPPORTED_NODE_VERSION_PROSE,
+          pin: await host.nodeVersionPin?.(),
+          nextStep: "restart REA",
+        }),
     classification: "missing_dependency",
   } as const;
   if (runtime.id === "node")
     return {
-      ...check(
-        "node",
-        supportsNodeVersion(runtime.version),
-        runtime.version,
-        failure,
-      ),
+      ...check("node", supported, runtime.version, failure),
       details: { runtime: "node", version: runtime.version },
     };
   return {
     ...check(
       "node",
-      supportsNodeVersion(runtime.nodeCompatibilityVersion),
+      supported,
       `Bun ${runtime.version} (Node.js ${runtime.nodeCompatibilityVersion} compatibility)`,
       failure,
     ),

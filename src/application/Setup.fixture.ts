@@ -17,6 +17,7 @@ import { SetupSkillInstallError } from "./SetupSkill.js";
 import type { DoctorCheck, DoctorReport, DoctorScope } from "./Doctor.js";
 import type { LinuxDistribution } from "./LinuxHopper.js";
 import { PRODUCT_IDENTITY, SDK_IDENTITY } from "../identity.js";
+import type { NodeVersionPin } from "../domain/runtimeVersion.js";
 import { CATALOG_IDENTITY } from "../catalogIdentity.js";
 import type { ClientRegistrationStatus } from "./ClientRegistrationStatus.js";
 import { setupRegistrationCommand } from "./SetupHost.js";
@@ -32,6 +33,8 @@ export class FakeSetupHost implements SetupHost {
   registrationCommand: readonly string[];
   registrationCommandBlocker?: string;
   nodeVersion = "24.18.0";
+  /** A source checkout's `.nvmrc` pin; absent for an installed package. */
+  nodeVersionPin?: () => Promise<NodeVersionPin | undefined>;
   version: string | undefined = "14.5";
   distribution: LinuxDistribution | undefined;
   hopper: string | undefined;

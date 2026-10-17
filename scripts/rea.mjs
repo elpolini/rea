@@ -141,7 +141,12 @@ async function reportUnsupportedNode(range) {
   );
 }
 
-/** A source checkout pins its development runtime in .nvmrc; packages do not. */
+/**
+ * A source checkout pins its development runtime in .nvmrc; packages do not.
+ * This launcher runs before compiled code can load, so it repeats the wording
+ * of `nodeRuntimeRemediation` in src/domain/runtimeVersion.ts that doctor and
+ * setup use; the dispatcher boundary test keeps both texts identical.
+ */
 async function nodeSelectionHint() {
   const pinPath = join(packageRoot, ".nvmrc");
   let pin;
@@ -157,9 +162,10 @@ async function nodeSelectionHint() {
   const pinned = /^v?\d+(?:\.\d+){0,2}$/u.test(pin)
     ? pin.replace(/^v/u, "")
     : undefined;
+  const managers = `\`nvm install\` or \`fnm use --install-if-missing\` in ${packageRoot}`;
   return pinned === undefined
-    ? `This checkout pins its Node.js version in ${pinPath}; select it with your version manager (for example \`nvm use\` or \`fnm use\` in ${packageRoot}), then restart REA.`
-    : `This checkout pins Node.js ${pinned} in ${pinPath}; select it with your version manager (for example \`nvm use\` or \`fnm use\` in ${packageRoot}, or \`nvm use ${pinned}\` with nvm-windows), then restart REA.`;
+    ? `This checkout pins its Node.js version in ${pinPath}; install or select it with your version manager (for example ${managers}), then restart REA.`
+    : `This checkout pins Node.js ${pinned} in ${pinPath}; install or select it with your version manager (for example ${managers}, or \`nvm install ${pinned}\` and \`nvm use ${pinned}\` with nvm-windows), then restart REA.`;
 }
 
 /**

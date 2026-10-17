@@ -23,7 +23,9 @@ import { jsonValueSchema, type JsonValue } from "../domain/jsonValue.js";
 import {
   javaScriptRuntime,
   type JavaScriptRuntime,
+  type NodeVersionPin,
 } from "../domain/runtimeVersion.js";
+import { readNodeVersionPin } from "./NodeVersionPin.js";
 import { installedCaskAppdir, probeHomebrew } from "./homebrew.js";
 import {
   macHopperApplicationRoots,
@@ -125,6 +127,8 @@ export interface DoctorHost {
   readonly platform: NodeJS.Platform;
   readonly architecture: NodeJS.Architecture;
   readonly runtime: JavaScriptRuntime;
+  /** The source checkout's `.nvmrc` pin, read only for an unsupported runtime. */
+  nodeVersionPin?(): Promise<NodeVersionPin | undefined>;
   readonly homeDirectory: string;
   readonly configuredHopperPath?: string;
   readonly configuredIlspyCmdPath?: string;
@@ -559,6 +563,7 @@ export const systemDoctorHost = (
     platform,
     architecture,
     runtime: javaScriptRuntime(process.versions),
+    nodeVersionPin: () => readNodeVersionPin(),
     homeDirectory,
     ...(environment.HOPPER_LAUNCHER_PATH === undefined
       ? {}

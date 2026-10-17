@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { AnalysisError } from "../domain/analysisErrorBase.js";
 import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
 import { ConfigurationError } from "../domain/configurationErrors.js";
-import { SUPPORTED_NODE_VERSION_PROSE } from "../domain/runtimeVersion.js";
+import {
+  SUPPORTED_NODE_VERSION_PROSE,
+  nodeRuntimeRemediation,
+} from "../domain/runtimeVersion.js";
 import { FakeSetupHost, options } from "./Setup.fixture.js";
 import { runSetup } from "./Setup.js";
 import type { SetupProgressEvent } from "./SetupTypes.js";
@@ -24,6 +27,21 @@ describe("setup workflow", () => {
     expect(host.hopperInstalls).toBe(0);
     expect(host.configurations).toBe(0);
     expect(host.skillInstalls).toBe(0);
+  });
+
+  it("names a source checkout's pinned runtime when setup refuses Node.js", async () => {
+    const host = new FakeSetupHost();
+    host.nodeVersion = "20.0.0";
+    host.nodeVersionPin = () =>
+      Promise.resolve({
+        root: "/checkout/rea",
+        path: "/checkout/rea/.nvmrc",
+        version: undefined,
+      });
+
+    expect((await runSetup(options(true), host)).remediation).toBe(
+      "This checkout pins its Node.js version in /checkout/rea/.nvmrc; install or select it with your version manager (for example `nvm install` or `fnm use --install-if-missing` in /checkout/rea), then rerun setup.",
+    );
   });
 
   it("records every detected client outcome after an earlier failure", async () => {
@@ -244,7 +262,10 @@ describe("setup scoped readiness", () => {
     const nodeHost = new FakeSetupHost();
     nodeHost.nodeVersion = "20.0.0";
     expect((await runSetup(options(true), nodeHost)).remediation).toBe(
-      `Install ${SUPPORTED_NODE_VERSION_PROSE} and rerun setup.`,
+      nodeRuntimeRemediation({
+        release: SUPPORTED_NODE_VERSION_PROSE,
+        nextStep: "rerun setup",
+      }),
     );
 
     const macHost = new FakeSetupHost();

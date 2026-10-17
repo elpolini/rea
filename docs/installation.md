@@ -414,11 +414,14 @@ protocol messages are unchanged. Under Bun, the notice uses the Node.js
 compatibility version Bun declares.
 
 `rea doctor` reports the same runtime in its failed `node` check, and
-`rea setup` refuses to configure agents until a supported runtime runs it. REA
-never installs or switches Node.js. Select a supported release yourself: in a
-checkout, run `nvm use` or `fnm use` there (nvm-windows takes the version as
-an argument, for example `nvm use 24.18.0`). Make that runtime the `node` on
-the `PATH` your shell or agent client uses, then restart REA or the client.
+`rea setup` refuses to configure agents until a supported runtime runs it. The
+launcher notice, doctor, and setup give the same recovery: install or select a
+supported release, naming the `.nvmrc` pin when REA runs from a checkout. REA
+never installs or switches Node.js. In a checkout, run `nvm install` or
+`fnm use --install-if-missing` there (nvm-windows takes the version as an
+argument, for example `nvm install 24.18.0` and `nvm use 24.18.0`). Make that
+runtime the `node` on the `PATH` your shell or agent client uses, then restart
+REA or the client.
 
 ## Diagnose, update, and remove
 

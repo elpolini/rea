@@ -8,6 +8,7 @@ import type {
 } from "./SetupSkill.js";
 import type { SkillBundleInspection } from "./SkillBundle.js";
 import type { Result } from "../domain/result.js";
+import type { NodeVersionPin } from "../domain/runtimeVersion.js";
 import type { SetupClient } from "./SupportedClients.js";
 import type {
   SetupFailureCode,
@@ -85,6 +86,8 @@ export interface SetupHost {
   /** Why client registration cannot proceed from this host. */
   readonly registrationCommandBlocker?: string;
   readonly nodeVersion: string;
+  /** The source checkout's `.nvmrc` pin, read only for an unsupported runtime. */
+  nodeVersionPin?(): Promise<NodeVersionPin | undefined>;
   macosVersion(): Promise<string | undefined>;
   linuxDistribution(): Promise<LinuxDistribution | undefined>;
   initialSetupState(scope?: DoctorScope): Promise<SetupInitialState>;

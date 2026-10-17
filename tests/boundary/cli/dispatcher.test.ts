@@ -3,6 +3,10 @@ import { join } from "node:path";
 
 import { describe, expect } from "vitest";
 
+import {
+  nodeRuntimeRemediation,
+  type NodeVersionPin,
+} from "../../../src/domain/runtimeVersion.js";
 import { workspaceCliTest } from "../../support/cli/workspaceCliFixture.js";
 import type { TestWorkspace } from "../../support/workspace/workspaceFixture.js";
 
@@ -141,6 +145,13 @@ describe("unsupported Node.js runtime notice", () => {
       };
       const notice = `REA is running on Node.js ${process.versions.node}, outside its supported Node.js range ${unsupported}, and may fail in unexpected ways.`;
       const unchanged = "REA does not install or switch Node.js.\n";
+      // The launcher repeats the wording doctor and setup use.
+      const hint = (pin?: NodeVersionPin) =>
+        nodeRuntimeRemediation({
+          release: "a supported release",
+          pin,
+          nextStep: "restart REA",
+        });
 
       const installed = await run(unsupported);
       expect(installed).toMatchObject({ exitCode: 0 });
@@ -148,19 +159,24 @@ describe("unsupported Node.js runtime notice", () => {
         adapter: "cli",
         args: ["--version"],
       });
-      expect(installed.stderr).toBe(
-        `${notice} Install or select a supported release with your version manager (for example nvm or fnm), make it the \`node\` on PATH for this shell or for the agent client that starts REA, then restart REA. ${unchanged}`,
+      expect(installed.stderr).toBe(`${notice} ${hint()} ${unchanged}`);
+      expect(installed.stderr).toContain(
+        "Install or select a supported release with your version manager (for example nvm or fnm), make it the `node` on PATH",
       );
 
       const pin = await workspace.write(".nvmrc", "v24.18.0\n");
+      const pinned = { root: workspace.root, path: pin, version: "24.18.0" };
       await expect(run(unsupported)).resolves.toMatchObject({
         exitCode: 0,
-        stderr: `${notice} This checkout pins Node.js 24.18.0 in ${pin}; select it with your version manager (for example \`nvm use\` or \`fnm use\` in ${workspace.root}, or \`nvm use 24.18.0\` with nvm-windows), then restart REA. ${unchanged}`,
+        stderr: `${notice} ${hint(pinned)} ${unchanged}`,
       });
+      expect(hint(pinned)).toBe(
+        `This checkout pins Node.js 24.18.0 in ${pin}; install or select it with your version manager (for example \`nvm install\` or \`fnm use --install-if-missing\` in ${workspace.root}, or \`nvm install 24.18.0\` and \`nvm use 24.18.0\` with nvm-windows), then restart REA.`,
+      );
 
       await workspace.write(".nvmrc", "lts/*\n");
       await expect(run(unsupported)).resolves.toMatchObject({
-        stderr: `${notice} This checkout pins its Node.js version in ${pin}; select it with your version manager (for example \`nvm use\` or \`fnm use\` in ${workspace.root}), then restart REA. ${unchanged}`,
+        stderr: `${notice} ${hint({ ...pinned, version: undefined })} ${unchanged}`,
       });
 
       for (const engines of [`>=${process.versions.node}`, undefined])

@@ -4,7 +4,10 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createTestTempDirectory } from "../../tests/fixtures/temporaryDirectory.js";
-import { SUPPORTED_NODE_VERSION_PROSE } from "../domain/runtimeVersion.js";
+import {
+  SUPPORTED_NODE_VERSION_PROSE,
+  nodeRuntimeRemediation,
+} from "../domain/runtimeVersion.js";
 import type { ClientRegistrationStatus } from "./ClientRegistrationStatus.js";
 import { createDoctorHostFixture as host } from "./Doctor.fixture.js";
 import { runDoctor, systemDoctorHost } from "./Doctor.js";
@@ -31,6 +34,35 @@ describe("doctor runtime check", () => {
         classification: "missing_dependency",
       }),
     );
+  });
+
+  it("names a source checkout's pinned runtime only for an unsupported runtime", async () => {
+    const pin = {
+      root: "/checkout/rea",
+      path: "/checkout/rea/.nvmrc",
+      version: "24.18.0",
+    };
+    let pinReads = 0;
+    const nodeVersionPin = () => {
+      pinReads += 1;
+      return Promise.resolve(pin);
+    };
+    const unsupported = await runDoctor(
+      undefined,
+      host({ runtime: { id: "node", version: "20.0.0" }, nodeVersionPin }),
+    );
+    expect(
+      unsupported.checks.find(({ name }) => name === "node")?.remediation,
+    ).toBe(
+      "This checkout pins Node.js 24.18.0 in /checkout/rea/.nvmrc; install or select it with your version manager (for example `nvm install` or `fnm use --install-if-missing` in /checkout/rea, or `nvm install 24.18.0` and `nvm use 24.18.0` with nvm-windows), then restart REA.",
+    );
+    expect(pinReads).toBe(1);
+
+    const supported = await runDoctor(undefined, host({ nodeVersionPin }));
+    expect(supported.checks.find(({ name }) => name === "node")).toMatchObject({
+      ok: true,
+    });
+    expect(pinReads).toBe(1);
   });
 
   it.each([
@@ -82,7 +114,10 @@ describe("doctor", () => {
         result.checks.map(({ name, remediation }) => [name, remediation]),
       ),
     ).toEqual({
-      node: `Install ${SUPPORTED_NODE_VERSION_PROSE}.`,
+      node: nodeRuntimeRemediation({
+        release: SUPPORTED_NODE_VERSION_PROSE,
+        nextStep: "restart REA",
+      }),
       host: "REA supports macOS 12+, Linux distributions with a recognized apt, dnf, or pacman package family, and the experimental Windows x64 Ghidra P0 boundary; automated Hopper setup additionally requires Ubuntu 24.04+, Fedora 41+, Nobara 44+, 64-bit Arch Linux, CachyOS, or Omarchy.",
       hopper: "Run rea setup to install Hopper, or set HOPPER_LAUNCHER_PATH.",
       target: "Supply a readable local app or program path.",
