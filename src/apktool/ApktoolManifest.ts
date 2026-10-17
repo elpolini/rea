@@ -142,7 +142,7 @@ export const parseDecodedManifest = (
   );
   for (const element of ignored)
     projection.omit(`${describe(element)} after the first <application>`);
-  const components: AndroidEntryPointComponent[] = [];
+  const projected: ProjectedComponent[] = [];
   for (const element of application === undefined
     ? []
     : elementChildren(application)) {
@@ -151,15 +151,37 @@ export const parseDecodedManifest = (
       element,
       element.nodeName as ComponentKind,
     );
-    if (component !== undefined) components.push(component);
+    if (component !== undefined) projected.push(component);
   }
-  const deepLinks = deriveDeepLinks(components);
+  const deepLinks = deriveDeepLinks(projected);
   return ok({
     packageName,
-    entryPoints: { components, deep_links: deepLinks.links },
+    entryPoints: {
+      components: projected.map(({ component }) => component),
+      deep_links: deepLinks.links,
+    },
     ...projection.report(deepLinks.total),
   });
 };
+
+/** A declared boolean and, when it is not literal, its declared text. */
+interface DeclaredBoolean {
+  readonly value: boolean | null;
+  readonly reference: string | null;
+}
+
+/** One intent filter and the URI constraints it declares but does not project. */
+interface ProjectedFilter {
+  readonly filter: AndroidIntentFilter;
+  /** Sorted distinct names; derived deep links omit these constraints. */
+  readonly unprojected: readonly string[];
+}
+
+/** A projected component with its filters, in `intent_filters` order. */
+interface ProjectedComponent {
+  readonly component: AndroidEntryPointComponent;
+  readonly filters: readonly ProjectedFilter[];
+}
 
 /** Collects omissions and unresolved values while projecting one manifest. */
 class ManifestProjection {
@@ -178,7 +200,7 @@ class ManifestProjection {
   component(
     element: Element,
     kind: ComponentKind,
-  ): AndroidEntryPointComponent | undefined {
+  ): ProjectedComponent | undefined {
     // Android refuses these declarations; omit them before resolving anything.
     const declaredName = element.getAttributeNS(ANDROID_NAMESPACE, "name");
     if (declaredName === null || declaredName === "") {
@@ -204,24 +226,30 @@ class ManifestProjection {
     const exported = this.boolean(element, "exported");
     const enabled = this.boolean(element, "enabled");
     const permission = this.text(element, "permission");
-    const intentFilters = elementChildren(element)
+    const filters = elementChildren(element)
       .filter((child) => child.nodeName === "intent-filter")
       .map((filter) => this.intentFilter(filter));
+    const intentFilters = filters.map(({ filter }) => filter);
     return {
-      kind,
-      name,
-      target_activity: targetActivity,
-      exported,
-      enabled,
-      permission,
-      launcher:
-        (kind === "activity" || kind === "activity-alias") &&
-        intentFilters.some(
-          ({ actions, categories }) =>
-            actions.includes(ACTION_MAIN) &&
-            categories.includes(CATEGORY_LAUNCHER),
-        ),
-      intent_filters: intentFilters,
+      component: {
+        kind,
+        name,
+        target_activity: targetActivity,
+        exported: exported.value,
+        exported_reference: exported.reference,
+        enabled: enabled.value,
+        enabled_reference: enabled.reference,
+        permission,
+        launcher:
+          (kind === "activity" || kind === "activity-alias") &&
+          intentFilters.some(
+            ({ actions, categories }) =>
+              actions.includes(ACTION_MAIN) &&
+              categories.includes(CATEGORY_LAUNCHER),
+          ),
+        intent_filters: intentFilters,
+      },
+      filters,
     };
   }
 
@@ -271,21 +299,29 @@ class ManifestProjection {
     };
   }
 
-  private intentFilter(filter: Element): AndroidIntentFilter {
+  private intentFilter(filter: Element): ProjectedFilter {
     const autoVerify = this.boolean(filter, "autoVerify");
     const children = elementChildren(filter);
+    const unprojected = new Set<string>();
     for (const child of children)
-      if (UNPROJECTED_FILTER_ELEMENTS.has(child.nodeName))
+      if (UNPROJECTED_FILTER_ELEMENTS.has(child.nodeName)) {
         this.#unprojectedFilterElements.add(child.nodeName);
+        unprojected.add(child.nodeName);
+      }
     const actions = this.names(children, "action");
     const categories = this.names(children, "category");
+    const data = children
+      .filter((child) => child.nodeName === "data")
+      .map((child) => this.data(child, unprojected));
     return {
-      actions,
-      categories,
-      auto_verify: autoVerify,
-      data: children
-        .filter((child) => child.nodeName === "data")
-        .map((child) => this.data(child)),
+      filter: {
+        actions,
+        categories,
+        auto_verify: autoVerify.value,
+        auto_verify_reference: autoVerify.reference,
+        data,
+      },
+      unprojected: [...unprojected].sort(),
     };
   }
 
@@ -302,7 +338,8 @@ class ManifestProjection {
     return [...names];
   }
 
-  private data(element: Element): AndroidIntentData {
+  /** Project one `<data>`, adding its unprojected attributes to the filter's. */
+  private data(element: Element, unprojected: Set<string>): AndroidIntentData {
     const attributes = element.attributes;
     for (let index = 0; index < attributes.length; index += 1) {
       const attribute = attributes.item(index);
@@ -311,8 +348,10 @@ class ManifestProjection {
         attribute?.namespaceURI === ANDROID_NAMESPACE &&
         name !== null &&
         !PROJECTED_DATA_ATTRIBUTES.has(name)
-      )
+      ) {
         this.#unprojectedData.add(name);
+        unprojected.add(name);
+      }
     }
     return {
       scheme: this.text(element, "scheme"),
@@ -351,13 +390,17 @@ class ManifestProjection {
     return value;
   }
 
-  private boolean(element: Element, attribute: string): boolean | null {
+  /**
+   * A literal boolean, or null with the declared text kept verbatim, so an
+   * unresolved value is never conflated with an undeclared one.
+   */
+  private boolean(element: Element, attribute: string): DeclaredBoolean {
     const value = element.getAttributeNS(ANDROID_NAMESPACE, attribute);
-    if (value === null) return null;
-    if (value === "true") return true;
-    if (value === "false") return false;
+    if (value === null) return { value: null, reference: null };
+    if (value === "true") return { value: true, reference: null };
+    if (value === "false") return { value: false, reference: null };
     this.#noteUnresolved(attribute, value);
-    return null;
+    return { value: null, reference: value };
   }
 
   #noteUnresolved(attribute: string, value: string): void {
@@ -416,35 +459,46 @@ const uriParts = (filter: AndroidIntentFilter): UriParts | undefined => {
 
 /** Derive deep links, counting each product before enumerating its bound. */
 const deriveDeepLinks = (
-  components: readonly AndroidEntryPointComponent[],
+  components: readonly ProjectedComponent[],
 ): { links: AndroidDeepLink[]; total: number } => {
   const links: AndroidDeepLink[] = [];
   let total = 0;
-  for (const component of components) {
+  for (const { component, filters } of components) {
     if (component.kind !== "activity" && component.kind !== "activity-alias")
       continue;
-    for (const filter of component.intent_filters) {
+    filters.forEach(({ filter, unprojected }, filterIndex) => {
       const parts = uriParts(filter);
-      if (parts === undefined) continue;
+      if (parts === undefined) return;
       total +=
         parts.schemes.length * parts.authorities.length * parts.paths.length;
       if (links.length < MAX_DEEP_LINKS)
         links.push(
           ...expandDeepLinks(
-            component.name,
-            filter,
+            {
+              component: component.name,
+              filter,
+              filterIndex,
+              unprojected,
+            },
             parts,
             MAX_DEEP_LINKS - links.length,
           ),
         );
-    }
+    });
   }
   return { links, total };
 };
 
+/** The filter a set of derived rows comes from, and how rows name it. */
+interface DeepLinkSource {
+  readonly component: string;
+  readonly filter: AndroidIntentFilter;
+  readonly filterIndex: number;
+  readonly unprojected: readonly string[];
+}
+
 const expandDeepLinks = (
-  component: string,
-  filter: AndroidIntentFilter,
+  { component, filter, filterIndex, unprojected }: DeepLinkSource,
   { schemes, authorities, paths }: UriParts,
   limit: number,
 ): AndroidDeepLink[] => {
@@ -456,6 +510,8 @@ const expandDeepLinks = (
         if (links.length >= limit) return links;
         links.push({
           component,
+          filter_index: filterIndex,
+          unprojected: [...unprojected],
           scheme,
           host: authority?.host ?? null,
           port: authority?.port ?? null,

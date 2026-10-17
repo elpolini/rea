@@ -196,7 +196,9 @@ describe("real Apktool manifest excerpt", () => {
         name: "io.appium.android.apis.ApiDemos",
         target_activity: null,
         exported: true,
+        exported_reference: null,
         enabled: null,
+        enabled_reference: null,
         permission: null,
         launcher: true,
         intent_filters: [
@@ -207,6 +209,7 @@ describe("real Apktool manifest excerpt", () => {
               "android.intent.category.LAUNCHER",
             ],
             auto_verify: null,
+            auto_verify_reference: null,
             data: [],
           },
         ],
@@ -216,7 +219,9 @@ describe("real Apktool manifest excerpt", () => {
         name: "io.appium.android.apis.app.ActivityRecreate",
         target_activity: null,
         exported: true,
+        exported_reference: null,
         enabled: null,
+        enabled_reference: "@bool/atLeastHoneycomb",
         permission: null,
         launcher: false,
         intent_filters: [
@@ -224,6 +229,7 @@ describe("real Apktool manifest excerpt", () => {
             actions: ["android.intent.action.MAIN"],
             categories: ["appium.android.intent.category.SAMPLE_CODE"],
             auto_verify: null,
+            auto_verify_reference: null,
             data: [],
           },
         ],
@@ -233,7 +239,9 @@ describe("real Apktool manifest excerpt", () => {
         name: "io.appium.android.apis.app.MessengerService",
         target_activity: null,
         exported: false,
+        exported_reference: null,
         enabled: null,
+        enabled_reference: null,
         permission: null,
         launcher: false,
         intent_filters: [],
@@ -243,7 +251,9 @@ describe("real Apktool manifest excerpt", () => {
         name: "io.appium.android.apis.os.SmsMessageReceiver",
         target_activity: null,
         exported: true,
+        exported_reference: null,
         enabled: false,
+        enabled_reference: null,
         permission: null,
         launcher: false,
         intent_filters: [
@@ -251,6 +261,7 @@ describe("real Apktool manifest excerpt", () => {
             actions: ["android.provider.Telephony.SMS_RECEIVED"],
             categories: [],
             auto_verify: null,
+            auto_verify_reference: null,
             data: [],
           },
         ],
@@ -260,7 +271,9 @@ describe("real Apktool manifest excerpt", () => {
         name: "io.appium.android.apis.app.CreateShortcuts",
         target_activity: "io.appium.android.apis.app.LauncherShortcuts",
         exported: true,
+        exported_reference: null,
         enabled: null,
+        enabled_reference: null,
         permission: null,
         launcher: false,
         intent_filters: [
@@ -268,6 +281,7 @@ describe("real Apktool manifest excerpt", () => {
             actions: ["android.intent.action.CREATE_SHORTCUT"],
             categories: ["android.intent.category.DEFAULT"],
             auto_verify: null,
+            auto_verify_reference: null,
             data: [],
           },
         ],
@@ -346,26 +360,6 @@ describe("entry point components", () => {
     expect(result.limitations).toEqual([]);
   });
 
-  it("distinguishes exported unset from exported false and true", () => {
-    const result = decoded(
-      manifestWith(`
-        <activity android:name=".Unset"/>
-        <activity android:name=".Hidden" android:exported="false"/>
-        <receiver android:name=".Open" android:exported="true" android:enabled="true"/>`),
-    );
-    expect(
-      result.entryPoints.components.map(({ name, exported, enabled }) => [
-        name,
-        exported,
-        enabled,
-      ]),
-    ).toEqual([
-      ["com.rea.probe.Unset", null, null],
-      ["com.rea.probe.Hidden", false, null],
-      ["com.rea.probe.Open", true, true],
-    ]);
-  });
-
   it("keeps relative names as declared when the manifest has no package", () => {
     const result = decoded(
       manifestWith('<activity android:name=".Main"/>', null),
@@ -440,6 +434,8 @@ describe("deep link combination", () => {
     ]);
     expect(links[4]).toEqual({
       component: "com.rea.probe.LinkActivity",
+      filter_index: 0,
+      unprojected: [],
       scheme: "https",
       host: "m.example.com",
       port: "8443",
@@ -469,8 +465,17 @@ describe("deep link combination", () => {
     );
     expect(
       result.entryPoints.deep_links.map(
-        ({ component, path, path_kind, browsable, auto_verify, uri }) => ({
+        ({
           component,
+          filter_index,
+          path,
+          path_kind,
+          browsable,
+          auto_verify,
+          uri,
+        }) => ({
+          component,
+          filter_index,
           path,
           path_kind,
           browsable,
@@ -481,6 +486,7 @@ describe("deep link combination", () => {
     ).toEqual([
       {
         component: "com.rea.probe.Share",
+        filter_index: 0,
         path: "/[a-z]+",
         path_kind: "advanced_pattern",
         browsable: false,
@@ -489,6 +495,7 @@ describe("deep link combination", () => {
       },
       {
         component: "com.rea.probe.Share",
+        filter_index: 0,
         path: ".pdf",
         path_kind: "suffix",
         browsable: false,
@@ -497,6 +504,7 @@ describe("deep link combination", () => {
       },
       {
         component: "com.rea.probe.Share",
+        filter_index: 1,
         path: "/x",
         path_kind: "exact",
         browsable: true,
@@ -519,6 +527,8 @@ describe("deep link combination", () => {
     expect(result.entryPoints.deep_links).toEqual([
       {
         component: "com.rea.probe.Custom",
+        filter_index: 0,
+        unprojected: [],
         scheme: "myapp",
         host: null,
         port: null,
@@ -563,42 +573,6 @@ describe("deep link eligibility and bounds", () => {
     expect(result.entryPoints.deep_links).toEqual([]);
   });
 
-  it("keeps unresolved resource references explicit instead of guessing", () => {
-    const result = decoded(
-      manifestWith(`
-        <activity android:name=".Deep" android:exported="@bool/exported" android:permission="@string/perm">
-          <intent-filter android:autoVerify="@bool/verify">
-            <action android:name="android.intent.action.VIEW"/>
-            <category android:name="android.intent.category.BROWSABLE"/>
-            <data android:scheme="https" android:host="@string/deep_host" android:pathPrefix="@string/deep_path"/>
-          </intent-filter>
-        </activity>`),
-    );
-    const [component] = result.entryPoints.components;
-    expect(component).toMatchObject({
-      exported: null,
-      permission: "@string/perm",
-      intent_filters: [{ auto_verify: null }],
-    });
-    expect(result.entryPoints.deep_links).toEqual([
-      {
-        component: "com.rea.probe.Deep",
-        scheme: "https",
-        host: "@string/deep_host",
-        port: null,
-        path: "@string/deep_path",
-        path_kind: "prefix",
-        browsable: true,
-        auto_verify: null,
-        uri: "https://@string/deep_host@string/deep_path*",
-      },
-    ]);
-    expect(result.coverage).toBe("complete");
-    expect(result.limitations).toEqual([
-      "entry_points leaves 5 resource reference(s) or non-literal value(s) unresolved: text keeps the declared value and booleans report null: exported=@bool/exported (1); permission=@string/perm (1); autoVerify=@bool/verify (1); host=@string/deep_host (1); pathPrefix=@string/deep_path (1)",
-    ]);
-  });
-
   it("reports data constraints outside the projection as partial", () => {
     const result = decoded(
       manifestWith(`
@@ -609,9 +583,12 @@ describe("deep link eligibility and bounds", () => {
           </intent-filter>
         </activity>`),
     );
-    expect(result.entryPoints.deep_links.map(({ uri }) => uri)).toEqual([
-      "tel:",
-    ]);
+    expect(
+      result.entryPoints.deep_links.map(({ uri, unprojected }) => [
+        uri,
+        unprojected,
+      ]),
+    ).toEqual([["tel:", ["fragment", "ssp"]]]);
     expect(result.coverage).toBe("partial");
     expect(result.limitations).toEqual([
       "entry_points does not project <data> attribute(s) fragment, ssp; deep_links omit those constraints",
@@ -636,9 +613,12 @@ describe("deep link eligibility and bounds", () => {
     expect(result.entryPoints.components[0]?.intent_filters[0]?.data).toEqual([
       { ...NO_DATA, scheme: "https", host: "shop.example" },
     ]);
-    expect(result.entryPoints.deep_links.map(({ uri }) => uri)).toEqual([
-      "https://shop.example",
-    ]);
+    expect(
+      result.entryPoints.deep_links.map(({ uri, unprojected }) => [
+        uri,
+        unprojected,
+      ]),
+    ).toEqual([["https://shop.example", ["uri-relative-filter-group"]]]);
     expect(result.coverage).toBe("partial");
     expect(result.limitations).toEqual([
       "entry_points does not project <intent-filter> element(s) <uri-relative-filter-group>; deep_links omit their URI constraints",
@@ -684,6 +664,248 @@ describe("deep link eligibility and bounds", () => {
   });
 });
 
+describe("declared boolean references", () => {
+  it("distinguishes literal, unresolved, and undeclared booleans", () => {
+    const result = decoded(
+      manifestWith(`
+        <activity android:name=".Unset"/>
+        <activity android:name=".Hidden" android:exported="false"/>
+        <receiver android:name=".Open" android:exported="true" android:enabled="true"/>
+        <service android:name=".Flagged" android:exported="@bool/exported_flag" android:enabled="?attr/enabledFlag"/>
+        <activity android:name=".Odd" android:exported="yes" android:enabled="false"/>`),
+    );
+    expect(
+      result.entryPoints.components.map(
+        ({
+          name,
+          exported,
+          exported_reference,
+          enabled,
+          enabled_reference,
+        }) => [name, exported, exported_reference, enabled, enabled_reference],
+      ),
+    ).toEqual([
+      // Undeclared: both fields null.
+      ["com.rea.probe.Unset", null, null, null, null],
+      // Literal: the value, with no reference.
+      ["com.rea.probe.Hidden", false, null, null, null],
+      ["com.rea.probe.Open", true, null, true, null],
+      // Not literal: null with the declared text kept verbatim.
+      [
+        "com.rea.probe.Flagged",
+        null,
+        "@bool/exported_flag",
+        null,
+        "?attr/enabledFlag",
+      ],
+      ["com.rea.probe.Odd", null, "yes", false, null],
+    ]);
+    expect(result.coverage).toBe("complete");
+    expect(result.limitations).toEqual([
+      "entry_points leaves 3 resource reference(s) or non-literal value(s) unresolved: text keeps the declared value and booleans report null: exported=@bool/exported_flag (1); enabled=?attr/enabledFlag (1); exported=yes (1)",
+    ]);
+  });
+
+  it("distinguishes literal, unresolved, and undeclared autoVerify per filter", () => {
+    const result = decoded(
+      manifestWith(`
+        <activity android:name=".Links">
+          <intent-filter/>
+          <intent-filter android:autoVerify="true"/>
+          <intent-filter android:autoVerify="false"/>
+          <intent-filter android:autoVerify="@bool/verify_links"/>
+        </activity>`),
+    );
+    expect(
+      result.entryPoints.components[0]?.intent_filters.map(
+        ({ auto_verify, auto_verify_reference }) => [
+          auto_verify,
+          auto_verify_reference,
+        ],
+      ),
+    ).toEqual([
+      [null, null],
+      [true, null],
+      [false, null],
+      [null, "@bool/verify_links"],
+    ]);
+  });
+
+  it("keeps unresolved resource references explicit instead of guessing", () => {
+    const result = decoded(
+      manifestWith(`
+        <activity android:name=".Deep" android:exported="@bool/exported" android:permission="@string/perm">
+          <intent-filter android:autoVerify="@bool/verify">
+            <action android:name="android.intent.action.VIEW"/>
+            <category android:name="android.intent.category.BROWSABLE"/>
+            <data android:scheme="https" android:host="@string/deep_host" android:pathPrefix="@string/deep_path"/>
+          </intent-filter>
+        </activity>`),
+    );
+    const [component] = result.entryPoints.components;
+    expect(component).toMatchObject({
+      exported: null,
+      exported_reference: "@bool/exported",
+      enabled: null,
+      enabled_reference: null,
+      permission: "@string/perm",
+      intent_filters: [
+        { auto_verify: null, auto_verify_reference: "@bool/verify" },
+      ],
+    });
+    expect(result.entryPoints.deep_links).toEqual([
+      {
+        component: "com.rea.probe.Deep",
+        filter_index: 0,
+        unprojected: [],
+        scheme: "https",
+        host: "@string/deep_host",
+        port: null,
+        path: "@string/deep_path",
+        path_kind: "prefix",
+        browsable: true,
+        auto_verify: null,
+        uri: "https://@string/deep_host@string/deep_path*",
+      },
+    ]);
+    expect(result.coverage).toBe("complete");
+    expect(result.limitations).toEqual([
+      "entry_points leaves 5 resource reference(s) or non-literal value(s) unresolved: text keeps the declared value and booleans report null: exported=@bool/exported (1); permission=@string/perm (1); autoVerify=@bool/verify (1); host=@string/deep_host (1); pathPrefix=@string/deep_path (1)",
+    ]);
+  });
+});
+
+describe("deep link source filters", () => {
+  it("indexes each row's producing filter, counting filters without a scheme", () => {
+    const result = decoded(
+      manifestWith(`
+        <activity android:name=".Main">
+          <intent-filter>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+          </intent-filter>
+          <intent-filter>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="first"/>
+          </intent-filter>
+          <intent-filter>
+            <action android:name="android.intent.action.SEND"/>
+            <data android:mimeType="text/plain"/>
+          </intent-filter>
+          <intent-filter android:autoVerify="@bool/verify">
+            <action android:name="android.intent.action.VIEW"/>
+            <category android:name="android.intent.category.BROWSABLE"/>
+            <data android:scheme="https" android:host="a.example"/>
+            <data android:scheme="http"/>
+          </intent-filter>
+        </activity>
+        <service android:name=".Sync">
+          <intent-filter>
+            <data android:scheme="ignored"/>
+          </intent-filter>
+        </service>
+        <activity-alias android:name=".Alias" android:targetActivity=".Main">
+          <intent-filter>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="alias"/>
+          </intent-filter>
+        </activity-alias>`),
+    );
+    const links = result.entryPoints.deep_links;
+    expect(
+      links.map(({ component, filter_index, uri }) => [
+        component,
+        filter_index,
+        uri,
+      ]),
+    ).toEqual([
+      ["com.rea.probe.Main", 1, "first:"],
+      ["com.rea.probe.Main", 3, "https://a.example"],
+      ["com.rea.probe.Main", 3, "http://a.example"],
+      // The index restarts within each component.
+      ["com.rea.probe.Alias", 0, "alias:"],
+    ]);
+    // Each index selects the producing filter, whose facts the row omits.
+    for (const link of links) {
+      const component = result.entryPoints.components.find(
+        ({ name }) => name === link.component,
+      );
+      const filter = component?.intent_filters[link.filter_index];
+      expect(filter?.data.some(({ scheme }) => scheme === link.scheme)).toBe(
+        true,
+      );
+      expect(link.auto_verify).toBe(filter?.auto_verify);
+    }
+    expect(
+      result.entryPoints.components[0]?.intent_filters[3]
+        ?.auto_verify_reference,
+    ).toBe("@bool/verify");
+  });
+
+  it("names unprojected constraints per row, from that row's filter only", () => {
+    const result = decoded(
+      manifestWith(`
+        <activity android:name=".Mixed">
+          <intent-filter>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https" android:host="plain.example"/>
+          </intent-filter>
+          <intent-filter>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo" android:sspPrefix="0,0"/>
+            <data android:query="q=*" android:sspPattern=".*"/>
+            <data android:sspPrefix="1,1" android:sspAdvancedPattern="[0-9]+" android:sspSuffix="z"/>
+          </intent-filter>
+          <intent-filter>
+            <action android:name="android.intent.action.VIEW"/>
+            <category android:name="android.intent.category.BROWSABLE"/>
+            <data android:scheme="https" android:host="shop.example" android:fragment="top"/>
+            <uri-relative-filter-group>
+              <data android:query="ref=*"/>
+            </uri-relative-filter-group>
+          </intent-filter>
+        </activity>
+        <activity android:name=".Other">
+          <intent-filter>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="other"/>
+          </intent-filter>
+        </activity>`),
+    );
+    expect(
+      result.entryPoints.deep_links.map(
+        ({ component, filter_index, uri, unprojected }) => [
+          component,
+          filter_index,
+          uri,
+          unprojected,
+        ],
+      ),
+    ).toEqual([
+      ["com.rea.probe.Mixed", 0, "https://plain.example", []],
+      [
+        "com.rea.probe.Mixed",
+        1,
+        "geo:",
+        ["query", "sspAdvancedPattern", "sspPattern", "sspPrefix", "sspSuffix"],
+      ],
+      [
+        "com.rea.probe.Mixed",
+        2,
+        "https://shop.example",
+        ["fragment", "uri-relative-filter-group"],
+      ],
+      ["com.rea.probe.Other", 0, "other:", []],
+    ]);
+    // The global limitations still summarize every unprojected constraint.
+    expect(result.coverage).toBe("partial");
+    expect(result.limitations).toEqual([
+      "entry_points does not project <data> attribute(s) fragment, query, sspAdvancedPattern, sspPattern, sspPrefix, sspSuffix; deep_links omit those constraints",
+      "entry_points does not project <intent-filter> element(s) <uri-relative-filter-group>; deep_links omit their URI constraints",
+    ]);
+  });
+});
+
 describe("malformed declarations", () => {
   it("omits unnamed components and incomplete filters with their locations", () => {
     const result = decoded(
@@ -707,7 +929,9 @@ describe("malformed declarations", () => {
         name: "com.rea.probe.Kept",
         target_activity: null,
         exported: null,
+        exported_reference: null,
         enabled: null,
+        enabled_reference: "yes",
         permission: null,
         launcher: false,
         intent_filters: [
@@ -715,6 +939,7 @@ describe("malformed declarations", () => {
             actions: ["android.intent.action.VIEW"],
             categories: [],
             auto_verify: null,
+            auto_verify_reference: null,
             data: [NO_DATA],
           },
         ],

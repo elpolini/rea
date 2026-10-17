@@ -89,6 +89,19 @@ try {
         decoded.strings.length > 0,
         `${decoded.strings.length} string(s)`,
       );
+      const withoutManifest = await run("decode_android_resources", {
+        path: options.apk,
+        include_strings: true,
+        include_manifest: false,
+      });
+      if (withoutManifest !== null)
+        check(
+          "include_manifest false omits the text and keeps entry points",
+          withoutManifest.manifest === null &&
+            JSON.stringify(withoutManifest.entry_points) ===
+              JSON.stringify(entryPoints),
+          `${JSON.stringify(withoutManifest).length} of ${JSON.stringify(decoded).length} result characters`,
+        );
       if (decoded.locales.length > 0) {
         const locale = await run("decode_android_resources", {
           path: options.apk,

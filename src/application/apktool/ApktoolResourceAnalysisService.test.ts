@@ -7,6 +7,7 @@ import { ApktoolResourceAnalysisService } from "./ApktoolResourceAnalysisService
 import type { ApktoolResourceAnalysisPort } from "./ApktoolResourceAnalysisPort.js";
 import { createAnalysisExecution } from "../AnalysisProvider.js";
 import { AnalysisCancelledError } from "../../domain/analysisErrorCore.js";
+import type { AndroidEntryPoints } from "../../domain/apktool/apktoolResourceAnalysis.js";
 import { parseEvidence } from "../../domain/evidence.js";
 import { ok } from "../../domain/result.js";
 import { toolContract } from "../../contracts/toolContracts.js";
@@ -59,7 +60,11 @@ it("composes observed Evidence with the caller parameters inline", async () => {
     async execute(request) {
       expect(request).toEqual({
         operation: "decode_android_resources",
-        input: { path: "/targets/app.apk", include_strings: true },
+        input: {
+          path: "/targets/app.apk",
+          include_strings: true,
+          include_manifest: true,
+        },
       });
       return ok(execution);
     },
@@ -75,6 +80,7 @@ it("composes observed Evidence with the caller parameters inline", async () => {
   expect(evidence.parameters).toEqual({
     path: "/targets/app.apk",
     include_strings: true,
+    include_manifest: true,
   });
   expect(evidence.confidence).toBe("observed");
 });
@@ -123,6 +129,7 @@ it("preserves a cancellation that races a completed observation", async () => {
   expect(retained.parameters).toEqual({
     path: "/targets/app.apk",
     include_strings: true,
+    include_manifest: true,
   });
   expect(retained.confidence).toBe("observed");
 });
@@ -153,10 +160,24 @@ const decodeResult = (path: string, bytes: number, sha256: string) => ({
 const digest = (bytes: Uint8Array): string =>
   createHash("sha256").update(bytes).digest("hex");
 
+/** What a decoding port reports besides the identity of the bytes it read. */
+interface DecodedFacts {
+  readonly result?: {
+    readonly entry_points?: AndroidEntryPoints;
+    readonly coverage?: "complete" | "partial";
+  };
+  readonly limitations?: readonly string[];
+}
+
 /** A decoding port that reports the digest of the bytes it was given. */
 const decodingPort = (
-  calls: { readonly path: string; readonly locale?: string | undefined }[],
+  calls: {
+    readonly path: string;
+    readonly locale?: string | undefined;
+    readonly include_manifest?: boolean;
+  }[],
   reported: (bytes: Buffer) => string = digest,
+  facts: DecodedFacts = {},
 ): ApktoolResourceAnalysisPort => ({
   async inspectAvailability() {
     throw new Error("must not probe");
@@ -165,13 +186,25 @@ const decodingPort = (
   async execute(request) {
     if (request.operation !== "decode_android_resources")
       throw new Error("unexpected operation");
-    calls.push({ path: request.input.path, locale: request.input.locale });
+    calls.push({
+      path: request.input.path,
+      locale: request.input.locale,
+      include_manifest: request.input.include_manifest,
+    });
     const bytes = await readFile(request.input.path);
     return ok(
       createAnalysisExecution(
-        decodeResult(request.input.path, bytes.length, reported(bytes)),
+        {
+          ...decodeResult(request.input.path, bytes.length, reported(bytes)),
+          ...facts.result,
+        },
         identity,
-        { limitations: ["Decoding skips smali (--no-src)"] },
+        {
+          limitations: [
+            "Decoding skips smali (--no-src)",
+            ...(facts.limitations ?? []),
+          ],
+        },
       ),
     );
   },
@@ -215,6 +248,7 @@ it("decodes a split container's base APK and reports the selected container", as
   expect(evidence.parameters).toEqual({
     path,
     include_strings: true,
+    include_manifest: true,
     locale: "de",
   });
   expect(evidence.normalized_result).toMatchObject({
@@ -227,12 +261,16 @@ it("decodes a split container's base APK and reports the selected container", as
       other_entry_count: 1,
     },
   });
-  // Apktool Evidence keeps its identity in target, as for a standalone APK.
-  expect(evidence.subject).toBeNull();
+  // The admitted container is the subject, as in the JADX family.
+  expect(evidence.subject).toMatchObject({
+    name: "app.xapk",
+    digest: { sha256: digest(container) },
+    local_path: path,
+  });
   expect(evidence.limitations).toEqual([
-    "Artifact identity is unavailable for this observation.",
     "Decoding skips smali (--no-src)",
     expect.stringMatching(/^Analyzed only base APK base\.apk/u),
+    "The manifest and any entry_points or deep links derived from it come only from the base APK manifest; components declared in split manifests are absent.",
     "1 non-APK container entry was not analyzed.",
     expect.stringContaining("signatures"),
   ]);
@@ -240,6 +278,138 @@ it("decodes a split container's base APK and reports the selected container", as
     toolContract("decode_android_resources").outputSchema.safeParse(evidence)
       .success,
   ).toBe(true);
+  await service.inputs.close();
+});
+
+it("passes a container's entry points and coverage through unchanged", async () => {
+  const { path } = await writeContainer();
+  const entryPoints = {
+    components: [
+      {
+        kind: "activity" as const,
+        name: "com.example.app.LinkActivity",
+        target_activity: null,
+        exported: null,
+        exported_reference: "@bool/link_exported",
+        enabled: true,
+        enabled_reference: null,
+        permission: null,
+        launcher: false,
+        intent_filters: [
+          {
+            actions: ["android.intent.action.VIEW"],
+            categories: ["android.intent.category.BROWSABLE"],
+            auto_verify: true,
+            auto_verify_reference: null,
+            data: [
+              {
+                scheme: "https",
+                host: "app.example",
+                port: null,
+                path: null,
+                path_prefix: "/item",
+                path_pattern: null,
+                path_advanced_pattern: null,
+                path_suffix: null,
+                mime_type: null,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    deep_links: [
+      {
+        component: "com.example.app.LinkActivity",
+        filter_index: 0,
+        unprojected: ["sspPrefix"],
+        scheme: "https",
+        host: "app.example",
+        port: null,
+        path: "/item",
+        path_kind: "prefix" as const,
+        browsable: true,
+        auto_verify: true,
+        uri: "https://app.example/item*",
+      },
+    ],
+  };
+  const entryPointLimitations = [
+    "entry_points does not project <data> attribute(s) sspPrefix; deep_links omit those constraints",
+    "entry_points leaves 1 resource reference(s) or non-literal value(s) unresolved: text keeps the declared value and booleans report null: exported=@bool/link_exported (1)",
+  ];
+  const service = new ApktoolResourceAnalysisService(
+    decodingPort([], digest, {
+      result: { entry_points: entryPoints, coverage: "partial" },
+      limitations: entryPointLimitations,
+    }),
+  );
+  const result = await service.execute("decode_android_resources", { path });
+  if (!result.ok) throw result.error;
+  const evidence = parseEvidence(result.value);
+  const decoded = evidence.normalized_result as Record<string, unknown>;
+  expect(decoded.entry_points).toEqual(entryPoints);
+  expect(decoded.coverage).toBe("partial");
+  // Provider limitations, including the manifest projection's, come first.
+  expect(evidence.limitations).toEqual([
+    "Decoding skips smali (--no-src)",
+    ...entryPointLimitations,
+    expect.stringMatching(/^Analyzed only base APK base\.apk/u),
+    expect.stringMatching(/^The manifest .* only from the base APK manifest/u),
+    "1 non-APK container entry was not analyzed.",
+    expect.stringContaining("signatures"),
+  ]);
+  expect(
+    toolContract("decode_android_resources").outputSchema.safeParse(evidence)
+      .success,
+  ).toBe(true);
+  await service.inputs.close();
+});
+
+it("binds a split directory decode to the base APK file it admitted", async () => {
+  const root = await createTestTempDirectory("rea-apktool-directory-");
+  const base = await splitApkBytes({ packageName: "com.example.app" });
+  const split = await splitApkBytes({
+    packageName: "com.example.app",
+    split: "config.xxhdpi",
+  });
+  const path = join(root, "com.example.app");
+  await writeSplitSet(
+    path,
+    { "base.apk": base, "split_config.xxhdpi.apk": split },
+    "directory",
+  );
+  const calls: { path: string; include_manifest?: boolean }[] = [];
+  const service = new ApktoolResourceAnalysisService(decodingPort(calls));
+  const result = await service.execute("decode_android_resources", {
+    path,
+    include_manifest: false,
+  });
+  if (!result.ok) throw result.error;
+  // The caller selection reaches the provider unchanged, beside the base path.
+  expect(calls).toEqual([
+    {
+      path: join(path, "base.apk"),
+      locale: undefined,
+      include_manifest: false,
+    },
+  ]);
+  const evidence = parseEvidence(result.value);
+  expect(evidence.parameters).toEqual({
+    path,
+    include_strings: true,
+    include_manifest: false,
+  });
+  expect(evidence.subject).toMatchObject({
+    name: "base.apk",
+    format: "apk",
+    digest: { sha256: digest(base) },
+    local_path: join(path, "base.apk"),
+  });
+  expect(evidence.normalized_result).toMatchObject({
+    target: { path: join(path, "base.apk"), sha256: digest(base) },
+    input_container: { kind: "directory", sha256: null },
+  });
   await service.inputs.close();
 });
 

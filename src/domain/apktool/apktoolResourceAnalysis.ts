@@ -53,6 +53,12 @@ export const apktoolInputSchemas = {
       .describe(
         "Project strings from res/values-<locale>/strings.xml instead of the default table",
       ),
+    include_manifest: z
+      .boolean()
+      .default(true)
+      .describe(
+        "Return the decoded AndroidManifest.xml text; false reports manifest null while entry_points is still parsed from it",
+      ),
   }),
 } as const;
 
@@ -106,7 +112,13 @@ const declaredBoolean = z
   .boolean()
   .nullable()
   .describe(
-    "Literal true/false as declared; null when undeclared or not literal, such as a @bool reference (see limitations)",
+    "Literal true/false as declared; null when undeclared or not literal. The matching *_reference field tells those apart",
+  );
+const declaredBooleanReference = z
+  .string()
+  .nullable()
+  .describe(
+    "Declared text when the boolean is not literal true/false, such as @bool/x, verbatim and unresolved; null when literal or undeclared",
   );
 
 const androidIntentDataSchema = z.strictObject({
@@ -125,6 +137,7 @@ const androidIntentFilterSchema = z.strictObject({
   actions: z.array(z.string().min(1)),
   categories: z.array(z.string().min(1)),
   auto_verify: declaredBoolean,
+  auto_verify_reference: declaredBooleanReference,
   data: z.array(androidIntentDataSchema),
 });
 
@@ -138,7 +151,9 @@ const androidComponentSchema = z.strictObject({
     ),
   target_activity: z.string().min(1).nullable(),
   exported: declaredBoolean,
+  exported_reference: declaredBooleanReference,
   enabled: declaredBoolean,
+  enabled_reference: declaredBooleanReference,
   permission: declaredValue,
   launcher: z
     .boolean()
@@ -150,13 +165,30 @@ const androidComponentSchema = z.strictObject({
 
 const androidDeepLinkSchema = z.strictObject({
   component: z.string().min(1),
+  filter_index: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe(
+      "Index of the producing filter in the component's intent_filters",
+    ),
+  unprojected: z
+    .array(z.string().min(1))
+    .describe(
+      "Constraints the producing filter declares but this row omits: <data> attribute names such as ssp, sspPrefix, query or fragment, or uri-relative-filter-group; [] when none",
+    ),
   scheme: z.string(),
   host: declaredValue,
   port: declaredValue,
   path: declaredValue,
   path_kind: z.enum(ANDROID_DEEP_LINK_PATH_KINDS).nullable(),
   browsable: z.boolean(),
-  auto_verify: declaredBoolean,
+  auto_verify: z
+    .boolean()
+    .nullable()
+    .describe(
+      "The producing filter's auto_verify; its auto_verify_reference tells undeclared from unresolved",
+    ),
   uri: z.string().describe("Display form only; match on the structured fields"),
 });
 
@@ -206,7 +238,12 @@ export const apktoolResultSchemas = {
       target_sdk_version: z.string().nullable(),
       package_name: z.string().nullable(),
     }),
-    manifest: z.string().nullable(),
+    manifest: z
+      .string()
+      .nullable()
+      .describe(
+        "Decoded AndroidManifest.xml text; null when the workspace has none or include_manifest is false (see limitations)",
+      ),
     entry_points: androidEntryPointsSchema
       .nullable()
       .describe(

@@ -72,7 +72,12 @@ it("forwards every locale the apktool input owner admits", async () => {
     expect(result.requests, `request for locale ${locale}`).toEqual([
       {
         operation: "decode_android_resources",
-        input: { path: "/targets/app.apk", include_strings: true, locale },
+        input: {
+          path: "/targets/app.apk",
+          include_strings: true,
+          include_manifest: true,
+          locale,
+        },
       },
     ]);
   }

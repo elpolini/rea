@@ -597,6 +597,7 @@ export class ApktoolProvider {
     input: {
       readonly path: string;
       readonly include_strings: boolean;
+      readonly include_manifest: boolean;
       readonly locale?: string | undefined;
     },
     signal: AbortSignal | undefined,
@@ -748,6 +749,9 @@ export class ApktoolProvider {
       );
       if (!manifestFacts.ok) throw manifestFacts.error;
       const manifest = manifestFacts.value;
+      // The caller may decline the text; its facts above are still projected.
+      const omittedManifest =
+        !input.include_manifest && manifestRead.text !== null;
       const stringsDirectory =
         input.locale === undefined
           ? "values"
@@ -790,7 +794,7 @@ export class ApktoolProvider {
               target_sdk_version: metadata.targetSdkVersion,
               package_name: manifest.packageName,
             },
-            manifest: manifestRead.text,
+            manifest: input.include_manifest ? manifestRead.text : null,
             entry_points: manifest.entryPoints,
             strings: bounded,
             locale: input.locale ?? null,
@@ -822,6 +826,11 @@ export class ApktoolProvider {
               ...(parsedStrings.entries.length > MAX_STRINGS
                 ? [
                     `strings reports the first ${String(MAX_STRINGS)} of ${String(parsedStrings.entries.length)} entries`,
+                  ]
+                : []),
+              ...(omittedManifest
+                ? [
+                    "manifest text was omitted by request (include_manifest false); the decoded AndroidManifest.xml was still read for package_name and entry_points",
                   ]
                 : []),
               ...manifest.limitations,

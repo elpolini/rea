@@ -22,7 +22,7 @@ export const APKTOOL_TOOL_CONTRACTS = [
     name: "decode_android_resources",
     ...toolContractMetadata("decode_android_resources"),
     description:
-      "Decode one local APK's resources with `apktool d --no-src` in a provider-owned workspace that is removed after projection: the readable AndroidManifest.xml with its declared entry points (activities, aliases, services, receivers, intent filters, launcher flags, and deep links derived from scheme-bearing activity filters), apktool.yml version and SDK facts, the app's string resources (default or one locale, bounded to 2000 entries), available string locales, and the decoded file count. The target APK is digest with SHA-256 before decoding; smali is skipped because Java-source recovery belongs to the JADX family.",
+      "Decode one local APK's resources with `apktool d --no-src` in a provider-owned workspace that is removed after projection: the readable AndroidManifest.xml with its declared entry points (activities, aliases, services, receivers, intent filters, launcher flags, and deep links derived from scheme-bearing activity filters), apktool.yml version and SDK facts, the app's string resources (default or one locale, bounded to 2000 entries), available string locales, and the decoded file count. path: APK, split APK container (.apks/.xapk ZIP) or directory of base and split APKs; only the base APK is decoded. include_manifest false omits the manifest text but keeps entry_points. The decoded APK is digested with SHA-256 first; smali is skipped because Java-source recovery belongs to the JADX family.",
     kind: "apktool-provider",
     inputSchema: apktoolInputSchemas.decode_android_resources,
     outputSchema: evidenceResultOf(

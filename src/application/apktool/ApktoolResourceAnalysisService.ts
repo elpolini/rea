@@ -88,8 +88,10 @@ export class ApktoolResourceAnalysisService {
     if (!composed.ok)
       return err(withContainerCleanup(composed.error, cleanup, operation));
     const execution = composed.value;
+    // The file REA admitted is the subject, as in the JADX family: the ZIP
+    // container, or the base APK file inside a selected directory.
     return completeProviderEvidence(
-      createEvidence(execution.subject ?? undefined, execution.provider, {
+      createEvidence(lease.subject, execution.provider, {
         operation,
         parameters: jsonObjectSchema.parse(selected),
         result: execution.result,

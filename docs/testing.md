@@ -764,7 +764,9 @@ lane also checks that `entry_points` was parsed from the complete manifest;
 the Windows record for that check (Apktool 2.12.1, JDK 21,
 `ApiDemos-debug.apk`) found 351 components, one launcher, and no deep links,
 and its manifest excerpt is the golden in
-`src/apktool/ApktoolManifest.test.ts`. See
+`src/apktool/ApktoolManifest.test.ts`. It then decodes again with
+`include_manifest: false` and checks that `manifest` is `null` while
+`entry_points` is unchanged; the Windows record passed that check. See
 [Apktool resource analysis](apktool-resource-analysis.md) for boundaries and
 budgets.
 

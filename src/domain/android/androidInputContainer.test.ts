@@ -125,9 +125,30 @@ it("states what the base-only analysis leaves unobserved", () => {
     expect.stringMatching(
       /^Analyzed only base APK base\.apk .* 2 split APKs were not analyzed/u,
     ),
+    "The manifest and any entry_points or deep links derived from it come only from the base APK manifest; components declared in split manifests are absent.",
     expect.stringContaining("split_feature.apk"),
     "Split split_other.apk declares package com.other, not the base package com.example.app.",
     "2 non-APK container entries were not analyzed.",
+    expect.stringContaining("signatures"),
+  ]);
+});
+
+it("states the base-manifest scope only when splits exist", () => {
+  const selected = selectAndroidContainerBase([member("base.apk")]);
+  if (!selected.ok) throw new Error(selected.error.message);
+  const limitations = androidInputContainerLimitations(
+    androidInputContainerSchema.parse({
+      path: "/targets/apks",
+      kind: "directory",
+      sha256: null,
+      bytes: null,
+      base: selected.value.base,
+      splits: [],
+      other_entry_count: 0,
+    }),
+  );
+  expect(limitations).toEqual([
+    expect.stringMatching(/the container holds no split APKs\.$/u),
     expect.stringContaining("signatures"),
   ]);
 });

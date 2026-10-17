@@ -184,7 +184,7 @@ it("decodes resources with target identity, metadata, and strings", async () => 
   const apk = await apkFixture(root);
   const result = await evidenceResult(providerOver(command), {
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true },
+    input: { path: apk.path, include_strings: true, include_manifest: true },
   });
   expect(result.target).toEqual({
     path: apk.path,
@@ -234,7 +234,7 @@ it.each([
   if (valid) {
     const result = await evidenceResult(providerOver(command), {
       operation: "decode_android_resources",
-      input: { path: apk.path, include_strings: false },
+      input: { path: apk.path, include_strings: false, include_manifest: true },
     });
     expect(result.metadata).toMatchObject({ version_name: "com.�.app" });
     expect(result.coverage).toBe("complete");
@@ -242,7 +242,7 @@ it.each([
   }
   const result = await providerOver(command).execute({
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: false },
+    input: { path: apk.path, include_strings: false, include_manifest: true },
   });
   if (result.ok) throw new Error("expected invalid producer output");
   const projected = projectAnalysisError(result.error);
@@ -258,7 +258,7 @@ it("preserves empty resource strings and reports markup omissions as partial", a
   const apk = await apkFixture(root);
   const result = await evidenceResult(providerOver(command), {
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true },
+    input: { path: apk.path, include_strings: true, include_manifest: true },
   });
   expect(result.strings).toEqual([
     { name: "empty", value: "" },
@@ -281,7 +281,7 @@ it("preserves literal U+FFFD in decoded XML with complete coverage", async () =>
   const apk = await apkFixture(root);
   const result = await evidenceResult(providerOver(command), {
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true },
+    input: { path: apk.path, include_strings: true, include_manifest: true },
   });
   expect(result).toMatchObject({
     manifest,
@@ -309,7 +309,7 @@ it("still refuses invalid UTF-8 bytes in decoded strings", async () => {
   const apk = await apkFixture(root);
   const result = await providerOver(command).execute({
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true },
+    input: { path: apk.path, include_strings: true, include_manifest: true },
   });
   expect(result.ok).toBe(false);
   if (result.ok) throw new Error("expected a refusal");
@@ -327,7 +327,7 @@ it("ignores Android resource qualifiers when discovering locales", async () => {
   const apk = await apkFixture(root);
   const result = await evidenceResult(providerOver(command), {
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true },
+    input: { path: apk.path, include_strings: true, include_manifest: true },
   });
   expect(result.locales).toEqual(["de"]);
 });
@@ -349,7 +349,12 @@ it("projects one locale's strings on request", async () => {
   const apk = await apkFixture(root);
   const result = await evidenceResult(providerOver(command), {
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true, locale: "de" },
+    input: {
+      path: apk.path,
+      include_strings: true,
+      locale: "de",
+      include_manifest: true,
+    },
   });
   expect(result.locale).toBe("de");
   expect(result.strings).toEqual([
@@ -362,7 +367,12 @@ it("notes a missing locale table instead of failing", async () => {
   const apk = await apkFixture(root);
   const result = await evidenceResult(providerOver(command), {
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true, locale: "fr" },
+    input: {
+      path: apk.path,
+      include_strings: true,
+      locale: "fr",
+      include_manifest: true,
+    },
   });
   expect(result.strings).toEqual([]);
 });
@@ -374,7 +384,7 @@ it("notes a missing default strings table without strings", async () => {
   const apk = await apkFixture(root);
   const result = await evidenceResult(providerOver(command), {
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true },
+    input: { path: apk.path, include_strings: true, include_manifest: true },
   });
   expect(result.strings).toEqual([]);
 });
@@ -386,7 +396,7 @@ it("reports apktool's own refusal for undecodable targets", async () => {
   const apk = await apkFixture(root);
   const projected = await refusedBy(providerOver(command), {
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true },
+    input: { path: apk.path, include_strings: true, include_manifest: true },
   });
   expect(projected).toMatchObject({ code: "unsupported_target" });
   expect(projected.message).toContain("Could not decode");
@@ -449,7 +459,11 @@ it("rejects a target that is not a readable file", async () => {
   const { command, root } = await writeApktoolStub(decodeStub());
   const projected = await refusedBy(providerOver(command), {
     operation: "decode_android_resources",
-    input: { path: join(root, "absent.apk"), include_strings: true },
+    input: {
+      path: join(root, "absent.apk"),
+      include_strings: true,
+      include_manifest: true,
+    },
   });
   expect(projected).toMatchObject({ code: "invalid_request" });
 });
@@ -464,7 +478,11 @@ if [ "$1" = "--version" ]; then ${VERSION_BLOCK}; exit 0; fi`,
   const result = await providerOver(command).execute(
     {
       operation: "decode_android_resources",
-      input: { path: "/targets/x.apk", include_strings: true },
+      input: {
+        path: "/targets/x.apk",
+        include_strings: true,
+        include_manifest: true,
+      },
     },
     { signal: controller.signal },
   );
@@ -497,7 +515,12 @@ it("uses an owned APK snapshot and framework cache and resolves regional locales
   const apk = await apkFixture(root);
   const result = await evidenceResult(providerOver(command), {
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true, locale: "pt-BR" },
+    input: {
+      path: apk.path,
+      include_strings: true,
+      locale: "pt-BR",
+      include_manifest: true,
+    },
   });
   expect(result.target).toMatchObject({
     sha256: apk.sha256,
@@ -519,7 +542,7 @@ it("marks an oversized strings document partial without claiming it is missing",
   const apk = await apkFixture(root);
   const result = await providerOver(command).execute({
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true },
+    input: { path: apk.path, include_strings: true, include_manifest: true },
   });
   if (!result.ok) throw result.error;
   expect(result.value.result).toMatchObject({
@@ -551,7 +574,7 @@ describe("truncated manifest prefixes", () => {
 
     const result = await providerOver(command).execute({
       operation: "decode_android_resources",
-      input: { path: apk.path, include_strings: false },
+      input: { path: apk.path, include_strings: false, include_manifest: true },
     });
     if (!result.ok) throw result.error;
 
@@ -591,7 +614,7 @@ it("projects manifest entry points with their omissions in the result contract",
   const apk = await apkFixture(root);
   const result = await providerOver(command).execute({
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: false },
+    input: { path: apk.path, include_strings: false, include_manifest: true },
   });
   if (!result.ok) throw result.error;
   const projected = apktoolResultSchemas.decode_android_resources.parse(
@@ -606,6 +629,60 @@ it("projects manifest entry points with their omissions in the result contract",
   expect(projected.coverage).toBe("partial");
   expect(result.value.limitations.join(" ")).toContain(
     "entry_points omits 1 malformed manifest declaration(s): <receiver> at line 10 without android:name",
+  );
+});
+
+it("omits the manifest text on request but still projects its facts", async () => {
+  const { command, root } = await writeApktoolStub(decodeStub());
+  const apk = await apkFixture(root);
+  const provider = providerOver(command);
+  const decode = (include_manifest: boolean) =>
+    evidenceResult(provider, {
+      operation: "decode_android_resources",
+      input: { path: apk.path, include_strings: true, include_manifest },
+    });
+  const kept = await decode(true);
+  const omitted = await provider.execute({
+    operation: "decode_android_resources",
+    input: { path: apk.path, include_strings: true, include_manifest: false },
+  });
+  if (!omitted.ok) throw omitted.error;
+  const result = apktoolResultSchemas.decode_android_resources.parse(
+    omitted.value.result,
+  );
+  expect(kept.manifest).toContain('package="com.rea.apktool.probe"');
+  expect(result.manifest).toBeNull();
+  // Everything else, including the manifest projection, is unchanged.
+  expect({ ...result, manifest: kept.manifest }).toEqual(kept);
+  expect(result.metadata.package_name).toBe("com.rea.apktool.probe");
+  expect(result.coverage).toBe("complete");
+  expect(omitted.value.limitations).toContain(
+    "manifest text was omitted by request (include_manifest false); the decoded AndroidManifest.xml was still read for package_name and entry_points",
+  );
+});
+
+it("does not claim an omission when the decoded workspace has no manifest", async () => {
+  // Copying an absent file leaves the decoded workspace without a manifest.
+  const { command, root } = await writeApktoolStub((root) =>
+    decodeStub({ manifestFile: join(root, "absent-AndroidManifest.xml") })(
+      root,
+    ),
+  );
+  const apk = await apkFixture(root);
+  const result = await providerOver(command).execute({
+    operation: "decode_android_resources",
+    input: { path: apk.path, include_strings: false, include_manifest: false },
+  });
+  if (!result.ok) throw result.error;
+  expect(result.value.result).toMatchObject({
+    manifest: null,
+    entry_points: null,
+  });
+  expect(result.value.limitations).toContain(
+    "No AndroidManifest.xml was found in the decoded workspace; package_name and entry_points are unavailable",
+  );
+  expect(result.value.limitations.join(" ")).not.toContain(
+    "omitted by request",
   );
 });
 
@@ -626,7 +703,7 @@ it("retains failed workspace cleanup and retries it on close", async () => {
   });
   const result = await provider.execute({
     operation: "decode_android_resources",
-    input: { path: apk.path, include_strings: true },
+    input: { path: apk.path, include_strings: true, include_manifest: true },
   });
   expect(result.ok).toBe(false);
   if (!result.ok) expect(result.error.cleanup?.resources).toContain(owned);

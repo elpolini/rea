@@ -51,7 +51,9 @@ export const registerApktoolCommands = (
       path: z
         .string()
         .min(1)
-        .describe("Local APK, split APK set or APK directory"),
+        .describe(
+          "Local APK, split APK set or APK directory; only the base APK is decoded",
+        ),
     }),
     // The locale grammar and the string-projection default belong to the
     // apktool input owner. Read them from that schema rather than restating a
@@ -69,11 +71,22 @@ export const registerApktoolCommands = (
         .describe(
           "Include string resources; use --no-strings to skip projecting them",
         ),
+      manifest: z
+        .boolean()
+        .default(
+          apktoolInputSchemas.decode_android_resources.shape.include_manifest.parse(
+            undefined,
+          ),
+        )
+        .describe(
+          "Include the manifest text; use --no-manifest to omit it (entry_points is still parsed)",
+        ),
     }),
     run: ({ args, options }) =>
       execute(CLI_COMMANDS.decodeAndroidResources, "decode_android_resources", {
         path: args.path,
         include_strings: options.strings,
+        include_manifest: options.manifest,
         ...(options.locale === undefined ? {} : { locale: options.locale }),
       }),
   });

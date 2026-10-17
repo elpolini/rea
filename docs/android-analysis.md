@@ -199,8 +199,11 @@ matches the file at `local_path`; `input_container.base.sha256` identifies the
 analyzed APK. For a directory the subject is the base APK file inside it.
 Limitations state that the splits were not analyzed and name feature splits,
 split packages that differ from the base and the count of non-APK entries.
-Split code, resources and native libraries are absent from the result; APK
-signatures and install compatibility are not verified. A result without
+Split code, resources and native libraries are absent from the result. When the
+set has splits, a limitation also states that the manifest, and any entry
+points or deep links derived from it, come only from the base APK manifest:
+components declared in split manifests are absent. APK signatures and install
+compatibility are not verified. A result without
 `input_container` came from a standalone APK.
 
 ZIP containers use REA's hardened ZIP reader: CRC-checked members,

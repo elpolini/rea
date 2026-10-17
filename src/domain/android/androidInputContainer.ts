@@ -183,6 +183,11 @@ export const androidInputContainerLimitations = (
     splits.length === 0
       ? `Analyzed base APK ${base.entry} (sha256 ${base.sha256}) from ${source}; the container holds no split APKs.`
       : `Analyzed only base APK ${base.entry} (sha256 ${base.sha256}) from ${source}; ${String(splits.length)} split APK${splits.length === 1 ? " was" : "s were"} not analyzed, so their code, resources and native libraries are absent from this result.`,
+    ...(splits.length === 0
+      ? []
+      : [
+          "The manifest and any entry_points or deep links derived from it come only from the base APK manifest; components declared in split manifests are absent.",
+        ]),
     ...(features.length === 0
       ? []
       : [

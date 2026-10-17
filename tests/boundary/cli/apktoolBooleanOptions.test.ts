@@ -56,7 +56,32 @@ it("dispatches --no-strings as include_strings false", async () => {
   expect(result.requests).toEqual([
     {
       operation: "decode_android_resources",
-      input: { path: "/targets/app.apk", include_strings: false },
+      input: {
+        path: "/targets/app.apk",
+        include_strings: false,
+        include_manifest: true,
+      },
+    },
+  ]);
+});
+
+it("dispatches --no-manifest as include_manifest false", async () => {
+  const result = await invoke([
+    "decode-android-resources",
+    "/targets/app.apk",
+    "--no-manifest",
+    "--json",
+  ]);
+
+  expect(result.exitCode).toBe(0);
+  expect(result.requests).toEqual([
+    {
+      operation: "decode_android_resources",
+      input: {
+        path: "/targets/app.apk",
+        include_strings: true,
+        include_manifest: false,
+      },
     },
   ]);
 });
@@ -72,14 +97,19 @@ it("keeps string projection enabled when the flag is omitted", async () => {
   expect(result.requests).toEqual([
     {
       operation: "decode_android_resources",
-      input: { path: "/targets/app.apk", include_strings: true },
+      input: {
+        path: "/targets/app.apk",
+        include_strings: true,
+        include_manifest: true,
+      },
     },
   ]);
 });
 
-it("documents the supported negative flag in command help", async () => {
+it("documents the supported negative flags in command help", async () => {
   const result = await invoke(["decode-android-resources", "--help"]);
 
   expect(result.exitCode).toBe(0);
   expect(result.stdout).toContain("--no-strings");
+  expect(result.stdout).toContain("--no-manifest");
 });

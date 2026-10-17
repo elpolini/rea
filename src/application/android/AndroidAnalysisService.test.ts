@@ -156,6 +156,7 @@ it("analyzes a container's base APK and binds Evidence to the selected file", as
   expect(evidence.limitations).toEqual([
     "Decompiled source is derived",
     expect.stringMatching(/^Analyzed only base APK base\.apk/u),
+    expect.stringMatching(/^The manifest .* only from the base APK manifest/u),
     expect.stringContaining("signatures"),
   ]);
   expect(

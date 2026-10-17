@@ -47,14 +47,23 @@ rea inspect-apktool-client
 rea decode-android-resources /targets/Example.apk
 rea decode-android-resources /targets/Example.apk --locale de
 rea decode-android-resources /targets/Example.apk --no-strings
+rea decode-android-resources /targets/Example.apk --no-strings --no-manifest
 ```
 
 Equivalent MCP methods are `inspect_apktool_client` and
 `decode_android_resources`. The decode request takes `path`, an optional
 `locale` (project `res/values-<locale>/strings.xml` instead of the default
-table), and `include_strings` (default true). Regional locales such as `pt-BR`
-select Android's `values-pt-rBR`; Android qualifiers such as `pt-rBR` and
-`b+zh+Hans+CN` may also be supplied directly.
+table), `include_strings` (default true), and `include_manifest` (default
+true; CLI `--no-manifest`). Regional locales such as `pt-BR` select Android's
+`values-pt-rBR`; Android qualifiers such as `pt-rBR` and `b+zh+Hans+CN` may
+also be supplied directly.
+
+`include_manifest: false` reports `manifest` as `null` and adds a limitation
+saying the text was omitted by request. Apktool still decodes and reads the
+manifest, so `package_name`, `entry_points` and their coverage are the same as
+with the text. Use it when the question is about entry points or deep links:
+the manifest text is usually the largest part of the result. REA 6.5.0 and
+earlier refuse `include_manifest` as an unknown field.
 
 ## Split APK sets
 
@@ -70,13 +79,16 @@ rea decode-android-resources /targets/app.xapk --locale de
 ```
 
 The result adds `input_container` with the container and each split's file
-name, size, SHA-256 and declared split facts. `target` names the file REA
-admitted: the ZIP container itself (its path, size and SHA-256), or the base APK
-file inside a selected directory. `input_container.base.sha256` is the digest
-of the decoded APK; REA refuses the result if the bytes Apktool decoded differ
-from it. Language and density splits (`config.de`, `config.xxhdpi`) are not
-decoded, so `locales` and the projected strings cover the base APK only; a
-locale that exists only in a split reports a missing table.
+name, size, SHA-256 and declared split facts. `target` and the Evidence
+subject name the file REA admitted: the ZIP container itself (its path, size
+and SHA-256), or the base APK file inside a selected directory.
+`input_container.base.sha256` is the digest of the decoded APK; REA refuses the
+result if the bytes Apktool decoded differ from it. Language and density splits
+(`config.de`, `config.xxhdpi`) are not decoded, so `locales` and the projected
+strings cover the base APK only; a locale that exists only in a split reports a
+missing table. Likewise `manifest`, `entry_points` and `deep_links` come only
+from the base APK manifest: components that a split manifest declares are
+absent, and a limitation says so whenever the set has splits.
 
 ## Interpret the result
 
@@ -88,7 +100,9 @@ locale that exists only in a split reports a missing table.
   keep their own spelling (`'7'` versus `7`); `package_name` is read from
   the decoded manifest, not inferred.
 - **The manifest is the decoded text**, bounded at 512 KiB and reported as
-  truncated when larger.
+  truncated when larger. It is `null` when the decoded workspace has no
+  manifest or the caller set `include_manifest: false`; the limitations say
+  which.
 - **`entry_points` is parsed from that same manifest text**, once, with the
   strict XML parser that also reads `package_name`. It is `null` when the
   manifest is missing or truncated; a manifest that is not well-formed XML
@@ -120,14 +134,21 @@ outside `<application>` are not entry points here. Each component reports:
   package it stays as declared and a limitation says so.
 - `target_activity` for an alias (resolved the same way), otherwise `null`.
 - `exported`, `enabled`, and `permission` exactly as the component declares
-  them, `null` when undeclared. Android's defaults (for example, the
-  intent-filter rule for an unset `exported`) and values inherited from
-  `<application>` or an alias target are not applied.
+  them. Android's defaults (for example, the intent-filter rule for an unset
+  `exported`) and values inherited from `<application>` or an alias target are
+  not applied. `permission` is `null` when undeclared. The booleans are
+  `true`/`false` only for a literal value; otherwise they are `null`, and
+  `exported_reference` and `enabled_reference` tell the two cases apart:
+  - undeclared: the boolean and its `*_reference` are both `null`;
+  - literal: the boolean is `true` or `false` and `*_reference` is `null`;
+  - not literal, such as `@bool/atLeastHoneycomb`: the boolean is `null` and
+    `*_reference` carries the declared text verbatim, unresolved.
 - `launcher`: an activity or alias has a filter with action
   `android.intent.action.MAIN` and category
   `android.intent.category.LAUNCHER`.
 - `intent_filters`, each with its distinct `actions` and `categories`,
-  `auto_verify`, and one `data` entry per `<data>` element. A `data` entry
+  `auto_verify` with `auto_verify_reference` (the same three cases as
+  `exported`), and one `data` entry per `<data>` element. A `data` entry
   has `scheme`, `host`, `port`, `path`, `path_prefix`, `path_pattern`,
   `path_advanced_pattern`, `path_suffix`, and `mime_type`, each `null` when
   that element does not declare it.
@@ -144,6 +165,18 @@ filter is `browsable`, and its `auto_verify`. `uri` is a display string only
 (`myapp:`, `https://host:8443/item`, `https://host/shop*`); match on the
 structured fields. Deep links do not check the filter's actions.
 
+Each row also identifies its source filter:
+
+- `filter_index` is the position of the producing filter in that component's
+  `intent_filters`, counting every filter, including those without a scheme.
+  Read the filter there for its actions, MIME types and
+  `auto_verify_reference`.
+- `unprojected` names the constraints that filter declares but the row does
+  not represent, sorted: `<data>` attribute names such as `ssp`, `sspPrefix`,
+  `sspPattern`, `sspAdvancedPattern`, `sspSuffix`, `query`, or `fragment`, and
+  `uri-relative-filter-group` for that element. Android may match fewer URIs
+  than such a row suggests. It is `[]` when the filter declares none.
+
 Values are reported as the decoded manifest declares them; nothing is
 resolved against resource tables:
 
@@ -151,9 +184,15 @@ resolved against resource tables:
   `?attr/x`) stays as declared in `name`, `permission`, `data`, and
   `deep_links`, including inside `uri`.
 - A boolean whose value is not literal `true` or `false`, such as
-  `@bool/atLeastHoneycomb`, reports `null`.
+  `@bool/atLeastHoneycomb`, reports `null` and keeps the declared text in its
+  `*_reference` field.
 - One limitation counts these unresolved values and names the first
   `attribute=value` groups. The declaration itself remains in `manifest`.
+
+Results from REA 6.5.0 and earlier have no `*_reference`, `filter_index`, or
+`unprojected` fields. Treat their absence as unknown: a `null` boolean in such a
+result may be undeclared or unresolved, and a row without `unprojected` may
+still omit constraints (the limitations say whether any filter declared them).
 
 Coverage becomes `partial` when the projection omits something it examined:
 
@@ -163,10 +202,11 @@ Coverage becomes `partial` when the projection omits something it examined:
   its line.
 - `<data>` attributes outside the projection, such as `ssp`, `sspPrefix`,
   `fragment`, or `query`. Deep links derived from those filters omit those
-  constraints.
+  constraints and name them in `unprojected`.
 - `<uri-relative-filter-group>` elements inside an `<intent-filter>`. Their
   allow and deny rules are not modeled, so derived deep links can be broader
-  than what Android matches.
+  than what Android matches; their rows list `uri-relative-filter-group` in
+  `unprojected`.
 - More than 2,000 derived deep links. The limitation reports the full product
   size, which is counted without enumerating it.
 
@@ -207,3 +247,16 @@ auto-verified filter with two schemes, two authorities, and two paths
 produced its eight rows; an `@string` host stayed as declared; and an
 `sspPrefix` constraint made coverage partial. Other derivation rules are
 covered by parser tests. See `docs/testing.md` for the lane summary.
+
+The source-filter and reference fields and `include_manifest` were checked on
+Windows 11 with Apktool 2.12.1 and JDK 21 through the CLI. For
+`ApiDemos-debug.apk` with `--no-strings`, the Evidence was 285,813 bytes with
+the manifest text and 138,323 bytes with `--no-manifest`, with identical
+`entry_points`; its 57 `@bool` `enabled` values carry `enabled_reference`.
+A copy rebuilt with deep-link filters produced 27 rows from five components.
+One component's four scheme-bearing filters produced rows with `filter_index`
+0 to 3, and the only row from an `sspPrefix` filter reported
+`unprojected: ["sspPrefix"]`. The same decode through a stdio MCP server
+returned Evidence with the same `evidence_id`. An `.apks` set built from that
+copy and a feature split reported the container as the Evidence subject, with
+the base-manifest limitation after the manifest projection's limitations.
