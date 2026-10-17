@@ -146,9 +146,12 @@ checks that bundle while planning, including `--dry-run`, and again after
 approval. If it is missing, unreadable, or declares another skill version or
 tool count, setup reports `needs_human` with `skill_install_failed` before
 changing any client: a checkout is told to run `npm run build:cached` in that
-checkout (on Windows without the native artifacts, `npm run compile` and then
-`npm run artifacts:skills`), and an installed package is told to reinstall the
-same version. `--skill=false` still configures clients without the skill.
+checkout, and an installed package is told to reinstall the same version. On
+Windows that build needs the native artifacts, so the checkout is first told
+to run `npm run restore:windows-native` (or the Linux/MinGW lane in
+`native/windows/README.md`) and then `npm run build:cached`; `npm run compile`
+followed by `npm run artifacts:skills` remains an alternative without the
+build lock, to run only while no other build is running. `--skill=false` still configures clients without the skill.
 Doctor names the same command, and reports an installed copy whose current
 metadata cannot be compared without the bundle as `unknown`. When the bundle is
 usable, doctor's update command for a checkout is setup through that checkout's

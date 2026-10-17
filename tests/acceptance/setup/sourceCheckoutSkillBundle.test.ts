@@ -99,8 +99,11 @@ processTest(
         `run \`npm run build:cached\` in the source checkout ${checkout.root}`,
       );
       expect(remediation).toContain("rerun setup with --skill=false");
+      // Windows offers the locked build first and the unlocked generators last.
       if (process.platform === "win32")
-        expect(remediation).toContain("npm run artifacts:skills");
+        expect(remediation).toMatch(
+          /On Windows, `npm run build:cached` needs the native artifacts in native\/windows\/build: run `npm run restore:windows-native` \(or build them with the Linux\/MinGW lane in native\/windows\/README\.md\), then `npm run build:cached`\. Without them, `npm run compile` and then `npm run artifacts:skills` also regenerate the bundle, but without the build lock, so run them only while no other build is running\./u,
+        );
     }
     await expect(
       access(join(checkout.home, ".claude.json")),

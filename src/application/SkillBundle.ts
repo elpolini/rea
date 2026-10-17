@@ -141,10 +141,14 @@ const skillBundleInstallation = async (
   }
 };
 
-/** `run-exclusive` builds need native Job Object ownership on Windows. */
+/**
+ * `run-exclusive` builds need native Job Object ownership on Windows. Restoring
+ * or building the artifacts keeps the locked build; the unlocked generators
+ * remain the fallback.
+ */
 const windowsCheckoutBuildNote = (platform: NodeJS.Platform): string =>
   platform === "win32"
-    ? " On Windows, `npm run build:cached` also needs the native artifacts in native/windows/build; without them, run `npm run compile` and then `npm run artifacts:skills` in the checkout instead, while no other build is running."
+    ? " On Windows, `npm run build:cached` needs the native artifacts in native/windows/build: run `npm run restore:windows-native` (or build them with the Linux/MinGW lane in native/windows/README.md), then `npm run build:cached`. Without them, `npm run compile` and then `npm run artifacts:skills` also regenerate the bundle, but without the build lock, so run them only while no other build is running."
     : "";
 
 const skillBundleAction = (
