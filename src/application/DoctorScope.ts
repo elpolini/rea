@@ -4,6 +4,7 @@ import type {
   UnhealthyClientRegistrationStatus,
 } from "./ClientRegistrationStatus.js";
 import { manualRegistrationRemediation } from "./SupportedClients.js";
+import { TEMPORARY_SPACE_CHECK } from "./DoctorStorage.js";
 import type {
   DoctorCheck,
   DoctorProviderInspection,
@@ -61,9 +62,13 @@ export const scopeDoctorChecks = (
   const providerChecks = input.checks.filter((candidate) =>
     isProviderCheck(candidate.name, input.providers.providerInspections),
   );
+  // Every analysis workflow needs the runtime and temporary space; the space
+  // check is advisory, so it stays visible here without failing readiness.
   const coreChecks = input.checks.filter(
     ({ name }) =>
-      name === "node" || (input.scope.target !== null && name === "target"),
+      name === "node" ||
+      name === TEMPORARY_SPACE_CHECK ||
+      (input.scope.target !== null && name === "target"),
   );
   const clientChecks = input.scope.clients.map((client) =>
     selectedRegistrationCheck(

@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Route production MCP before importing Incur. Incur owns registration helpers
 // such as `mcp add`, while the MCP runtime serves the stdio tool catalog.
 const args = process.argv.slice(2);
-const { default: packageJson } = await import("../package.json", {
-  with: { type: "json" },
-});
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// Read the manifest as text: older, unsupported Node.js releases reject JSON
+// import attributes before the runtime notice below could explain why.
+const packageJson = JSON.parse(
+  await readFile(join(packageRoot, "package.json"), "utf8"),
+);
 process.env.REA_PACKAGE_VERSION = packageJson.version;
+await reportUnsupportedNode(packageJson.engines?.node);
 const isMcpMode =
   args.length === 1 && (args[0] === "--mcp" || args[0] === "mcp");
 const isMcpDoctorMode = args[0] === "mcp" && args[1] === "doctor";
@@ -18,7 +22,6 @@ const isMcpDoctorMode = args[0] === "mcp" && args[1] === "doctor";
 const SIGPIPE_EXIT_STATUS = 141;
 // Set once the reader of CLI output has closed the pipe.
 let stdoutClosed = false;
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // Windows home lookup throws for an empty USERPROFILE. Dependencies resolve
 // home during import, before REA's own resolver can apply its account fallback.
@@ -108,6 +111,55 @@ if (!(await compiledRuntimeExists(runtimeFiles))) {
     if (!wroteOutput && !resultOutput?.handled)
       writeStdout(renderEmptyFilteredCliOutput(cliArgs) ?? "");
   }
+}
+
+/**
+ * Name the supported range once, on stderr, when this runtime is outside
+ * package.json#engines.node. REA continues so `rea doctor` can still report
+ * its failed `node` check; setup refuses on its own. REA never installs or
+ * switches Node.js.
+ */
+async function reportUnsupportedNode(range) {
+  if (typeof range !== "string") return;
+  let satisfies;
+  try {
+    ({ satisfies } = await import("semver"));
+  } catch (cause) {
+    // Without installed dependencies, the compiled-runtime check below
+    // already explains how to install and build REA.
+    if (cause?.code === "ERR_MODULE_NOT_FOUND") return;
+    throw cause;
+  }
+  const version = process.versions.node;
+  if (satisfies(version, range)) return;
+  const runtime =
+    process.versions.bun === undefined
+      ? `Node.js ${version}`
+      : `Bun ${process.versions.bun} (Node.js ${version} compatibility)`;
+  process.stderr.write(
+    `REA is running on ${runtime}, outside its supported Node.js range ${range}, and may fail in unexpected ways. ${await nodeSelectionHint()} REA does not install or switch Node.js.\n`,
+  );
+}
+
+/** A source checkout pins its development runtime in .nvmrc; packages do not. */
+async function nodeSelectionHint() {
+  const pinPath = join(packageRoot, ".nvmrc");
+  let pin;
+  try {
+    pin = (await readFile(pinPath, "utf8")).trim();
+  } catch (cause) {
+    // A missing or unreadable pin leaves the general version-manager advice.
+    void cause;
+    return "Install or select a supported release with your version manager (for example nvm or fnm), make it the `node` on PATH for this shell or for the agent client that starts REA, then restart REA.";
+  }
+  // Managers such as nvm-windows take the version as an argument, so name a
+  // well-formed pin explicitly; any other content is left to the manager.
+  const pinned = /^v?\d+(?:\.\d+){0,2}$/u.test(pin)
+    ? pin.replace(/^v/u, "")
+    : undefined;
+  return pinned === undefined
+    ? `This checkout pins its Node.js version in ${pinPath}; select it with your version manager (for example \`nvm use\` or \`fnm use\` in ${packageRoot}), then restart REA.`
+    : `This checkout pins Node.js ${pinned} in ${pinPath}; select it with your version manager (for example \`nvm use\` or \`fnm use\` in ${packageRoot}, or \`nvm use ${pinned}\` with nvm-windows), then restart REA.`;
 }
 
 /**

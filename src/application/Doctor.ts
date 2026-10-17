@@ -12,6 +12,7 @@ import { access, readdir, stat } from "node:fs/promises";
 import { ArtifactResourceScope } from "../artifacts/ArtifactResourceScope.js";
 import type { FileCloseResourceOwner } from "./AnalysisProvider.js";
 import { homeDirectoryFromEnvironment } from "../config/homeDirectory.js";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { analysisErrorRemediationAction } from "../domain/analysisErrorPresentation.js";
@@ -59,13 +60,23 @@ import {
   scopeDoctorChecks,
   type DoctorScopeReport,
 } from "./DoctorScope.js";
+import {
+  observeTemporaryStorage,
+  systemStorageStatistics,
+  type StorageStatisticsReader,
+  type TemporaryStorageObservation,
+} from "./DoctorStorage.js";
 
-/** One actionable environment diagnostic. */
+/**
+ * One actionable environment diagnostic. `warning` marks an advisory
+ * observation that keeps `ok` true and therefore never fails readiness.
+ */
 export interface DoctorCheck {
   readonly name: string;
   readonly ok: boolean;
   readonly classification:
     | "healthy"
+    | "warning"
     | "missing_dependency"
     | "runtime_failure"
     | "unsupported_host"
@@ -85,7 +96,10 @@ export interface DoctorProviderCheck {
   readonly code: string | null;
   readonly detail: string;
   readonly remediation: string | null;
-  readonly classification: Exclude<DoctorCheck["classification"], "healthy">;
+  readonly classification: Exclude<
+    DoctorCheck["classification"],
+    "healthy" | "warning"
+  >;
   readonly details?: Readonly<Record<string, JsonValue>>;
 }
 
@@ -134,6 +148,8 @@ export interface DoctorHost {
   close?(): Promise<string | undefined>;
   clientRegistrations?(): Promise<readonly ClientRegistrationStatus[]>;
   ilspyCmdVersion?(path: string): Promise<string | undefined>;
+  /** Free space where REA providers create their temporary workspaces. */
+  temporaryStorage?(): Promise<TemporaryStorageObservation>;
 }
 
 /** Structured result returned by the read-only doctor workflow. */
@@ -487,6 +503,10 @@ export interface SystemDoctorHostOptions {
   >;
   readonly resolveProviderRequestBudget?: ProviderRequestBudgetResolver;
   readonly linuxDemoRuntimeCheck?: () => Promise<DoctorCheck>;
+  /** Directory whose volume is measured; defaults to `os.tmpdir()` at check time. */
+  readonly temporaryDirectory?: string;
+  /** Volume statistics reader; defaults to the runtime's `fs.statfs`. */
+  readonly storageStatistics?: StorageStatisticsReader;
 }
 
 /** Create diagnostics backed by the current process and host commands. */
@@ -659,6 +679,11 @@ export const systemDoctorHost = (
         return [];
       }
     },
+    temporaryStorage: () =>
+      observeTemporaryStorage(
+        options.temporaryDirectory ?? tmpdir(),
+        options.storageStatistics ?? systemStorageStatistics,
+      ),
     installedSkillIdentity: (clientIds) =>
       readInstalledSkillIdentity(
         homeDirectory,

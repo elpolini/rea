@@ -16,6 +16,7 @@ import type {
   DoctorHost,
   DoctorProviderInspection,
 } from "./Doctor.js";
+import { temporaryStorageCheck } from "./DoctorStorage.js";
 
 /** Ordered environment diagnostics consumed by the Doctor report assembler. */
 export interface DoctorDiagnostics {
@@ -31,6 +32,9 @@ export const collectDoctorDiagnostics = async (
 ): Promise<DoctorDiagnostics> => {
   const checks: DoctorCheck[] = [nodeCheck(host)];
   checks.push(await hostCheck(host));
+  const temporaryStorage = await host.temporaryStorage?.();
+  if (temporaryStorage !== undefined)
+    checks.push(temporaryStorageCheck(temporaryStorage));
 
   const hopperPath = await findHopper(host);
   checks.push(hopperCheck(host, hopperPath));
@@ -285,7 +289,10 @@ const check = (
   detail: string | undefined,
   failure: {
     readonly remediation: string;
-    readonly classification: Exclude<DoctorCheck["classification"], "healthy">;
+    readonly classification: Exclude<
+      DoctorCheck["classification"],
+      "healthy" | "warning"
+    >;
   },
 ): DoctorCheck => ({
   name,

@@ -354,6 +354,53 @@ The public error code varies by caller: `capability_unavailable`,
 only a generic startup error. Check this prerequisite before following
 provider-specific recovery advice.
 
+### Temporary directory space
+
+REA providers create their working state in the temporary directory,
+`os.tmpdir()`: `TMPDIR` on macOS and Linux, `TEMP` or `TMP` on Windows. JADX
+and Apktool copy the APK there, and Apktool decodes it beside that copy, which
+needs roughly two to three times the APK size. Ghidra keeps its session
+project and cache there, and artifact extraction uses it by default. A full
+volume makes these operations fail partway through.
+
+`rea doctor` reports the volume's available space in its `temporary-space`
+check. It reads the counters with `statfs` and creates or changes nothing. The
+check is advisory: it keeps `ok: true` and never changes `healthy` or the exit
+status. With an explicit scope it appears in `scope_checks`.
+
+| `classification` | Meaning                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `healthy`        | At least 1 GiB is available.                                                                                                               |
+| `warning`        | Less than 1 GiB is available. `details` reports `path`, `available_bytes` and `warning_threshold_bytes`.                                   |
+| `unknown`        | `statfs` is unavailable or failed, for example because the directory does not exist. `details.reason` and `details.code` name the failure. |
+
+One GiB covers those runs for typical targets of a few hundred MiB; larger
+APKs, binaries or archives need proportionally more, so a `healthy` result is
+not a guarantee. To recover from a warning, free space on that volume, or start
+REA with `TMPDIR` (`TEMP` and `TMP` on Windows) pointing at a directory on a
+volume with more space. Doctor measures its own temporary directory. An MCP
+server uses the temporary directory of the environment its agent client starts
+it with, so set the variable there and restart the client. The check does not
+measure provider-specific caches or caller-selected outputs such as snapshots
+and Evidence exports.
+
+### Unsupported runtime version
+
+When the running Node.js is outside `package.json#engines.node`
+(`^22.19.0 || ^24.11.0 || >=26.0.0`), the `rea` launcher prints one notice on
+stderr before anything else and continues. The notice names that range. In a
+source checkout it also names the version pinned in `.nvmrc`; in an installed
+package it points to your version manager. Command results on stdout and MCP
+protocol messages are unchanged. Under Bun, the notice uses the Node.js
+compatibility version Bun declares.
+
+`rea doctor` reports the same runtime in its failed `node` check, and
+`rea setup` refuses to configure agents until a supported runtime runs it. REA
+never installs or switches Node.js. Select a supported release yourself: in a
+checkout, run `nvm use` or `fnm use` there (nvm-windows takes the version as
+an argument, for example `nvm use 24.18.0`). Make that runtime the `node` on
+the `PATH` your shell or agent client uses, then restart REA or the client.
+
 ## Diagnose, update, and remove
 
 `rea doctor --json` is strictly read-only. `rea update` updates only the npm or Bun global installation that owns the running CLI. Source checkouts and package-runner copies must be updated through the mechanism that owns them; a fresh package-runner invocation can use `npx rea-agents@latest` or `bunx rea-agents@latest`. `rea uninstall` removes only REA-owned agent registrations and skill files; `--purge-data` additionally removes REA cache and state paths.
@@ -1228,7 +1275,7 @@ equivalent entry point. Setup run through `npx` registers
 `cmd.exe /d /c` so clients can start the runner's command shim. Neither
 registration points into the runner's temporary package cache.
 
-REA supports Node.js 22.x (>=22.19), 24.x (>=24.11), and 26+. Node.js 23, 25, and prereleases are unsupported. It uses the npm already paired with that runtime and never upgrades Node.js, npm, or Homebrew.
+REA supports Node.js 22.x (>=22.19), 24.x (>=24.11), and 26+. Node.js 23, 25, and prereleases are unsupported. It uses the npm already paired with that runtime and never upgrades Node.js, npm, or Homebrew. On an unsupported runtime the launcher prints one notice and continues; see [unsupported runtime version](#unsupported-runtime-version).
 
 When REA runs on Bun, the `rea doctor` `node` check reports the Bun version and
 the Node.js compatibility version Bun declares, and passes when that

@@ -1,39 +1,57 @@
-import { copyFile } from "node:fs/promises";
+import { copyFile, realpath, symlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect } from "vitest";
 
 import { workspaceCliTest } from "../../support/cli/workspaceCliFixture.js";
+import type { TestWorkspace } from "../../support/workspace/workspaceFixture.js";
+
+/** Copy the real dispatcher beside a recording CLI runtime; returns its path. */
+const writeDispatcherWorkspace = async (
+  workspace: TestWorkspace,
+): Promise<string> => {
+  const scripts = await workspace.mkdir("scripts");
+  await Promise.all([
+    copyFile("scripts/rea.mjs", join(scripts, "rea.mjs")),
+    workspace.write(
+      "dist/cli-runtime/cli.js",
+      'export const cliConfigurationError = () => undefined; export const createCli = () => ({ serve: (args) => process.stdout.write(JSON.stringify({ adapter: "cli", args })) });\n',
+    ),
+    workspace.write(
+      "dist/cli-runtime/cliOutput.js",
+      "export const normalizeCliOutputArguments = (args) => args; export const validateCliOutputArguments = () => ({ ok: true }); export const renderCliOutputArgumentError = () => ''; export const renderEmptyFilteredCliOutput = () => undefined;\n",
+    ),
+    workspace.write(
+      "dist/cli-runtime/cliResultOutput.js",
+      "export const createCliResultOutput = () => undefined;\n",
+    ),
+  ]);
+  return join(scripts, "rea.mjs");
+};
+
+const writePackageJson = (
+  workspace: TestWorkspace,
+  engines?: string,
+): Promise<string> =>
+  workspace.write(
+    "package.json",
+    JSON.stringify({
+      type: "module",
+      version: "1.0.0",
+      ...(engines === undefined ? {} : { engines: { node: engines } }),
+    }),
+  );
 
 describe("executable dispatcher", () => {
   workspaceCliTest(
     "reserves production MCP routing for bare mode arguments",
     async ({ processes, workspace }) => {
-      const scripts = await workspace.mkdir("scripts");
-      await workspace.mkdir("dist");
-      await workspace.mkdir("dist/cli-runtime");
-      await workspace.mkdir("dist/mcp");
+      const dispatcher = await writeDispatcherWorkspace(workspace);
       await Promise.all([
-        copyFile("scripts/rea.mjs", join(scripts, "rea.mjs")),
-        workspace.write(
-          "package.json",
-          JSON.stringify({ type: "module", version: "1.0.0" }),
-        ),
+        writePackageJson(workspace),
         workspace.write(
           "dist/mcp/main.js",
           'export const runEntrypoint = () => process.stdout.write(JSON.stringify({ adapter: "mcp" }));\n',
-        ),
-        workspace.write(
-          "dist/cli-runtime/cli.js",
-          'export const cliConfigurationError = () => undefined; export const createCli = () => ({ serve: (args) => process.stdout.write(JSON.stringify({ adapter: "cli", args })) });\n',
-        ),
-        workspace.write(
-          "dist/cli-runtime/cliOutput.js",
-          "export const normalizeCliOutputArguments = (args) => args; export const validateCliOutputArguments = () => ({ ok: true }); export const renderCliOutputArgumentError = () => ''; export const renderEmptyFilteredCliOutput = () => undefined;\n",
-        ),
-        workspace.write(
-          "dist/cli-runtime/cliResultOutput.js",
-          "export const createCliResultOutput = () => undefined;\n",
         ),
         workspace.write(
           "dist/cli-runtime/mcpDoctor.js",
@@ -44,7 +62,7 @@ describe("executable dispatcher", () => {
       const invoke = async (args: readonly string[]): Promise<unknown> => {
         const { exitCode, stdout } = await processes.run(
           process.execPath,
-          [join(scripts, "rea.mjs"), ...args],
+          [dispatcher, ...args],
           { cwd: workspace.root },
         );
         expect(exitCode).toBe(0);
@@ -74,10 +92,9 @@ describe("executable dispatcher", () => {
       const scripts = await workspace.mkdir("scripts");
       await Promise.all([
         copyFile("scripts/rea.mjs", join(scripts, "rea.mjs")),
-        workspace.write(
-          "package.json",
-          JSON.stringify({ type: "module", version: "1.0.0" }),
-        ),
+        // Without installed dependencies the runtime notice cannot evaluate
+        // engines; an excluded runtime must still reach this explanation.
+        writePackageJson(workspace, `>${process.versions.node}`),
       ]);
 
       for (const args of [["mcp"], ["mcp", "doctor"], ["--help"]]) {
@@ -99,6 +116,58 @@ describe("executable dispatcher", () => {
           stderr: expect.not.stringContaining("ERR_MODULE_NOT_FOUND"),
         });
       }
+    },
+  );
+});
+
+describe("unsupported Node.js runtime notice", () => {
+  workspaceCliTest(
+    "names the supported range once and continues without switching runtimes",
+    async ({ processes, workspace }) => {
+      const dispatcher = await writeDispatcherWorkspace(workspace);
+      // The dispatcher evaluates package engines with the installed semver.
+      await workspace.mkdir("node_modules");
+      await symlink(
+        await realpath("node_modules/semver"),
+        workspace.path("node_modules/semver"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      const unsupported = `>${process.versions.node}`;
+      const run = async (engines?: string) => {
+        await writePackageJson(workspace, engines);
+        return processes.run(process.execPath, [dispatcher, "--version"], {
+          cwd: workspace.root,
+        });
+      };
+      const notice = `REA is running on Node.js ${process.versions.node}, outside its supported Node.js range ${unsupported}, and may fail in unexpected ways.`;
+      const unchanged = "REA does not install or switch Node.js.\n";
+
+      const installed = await run(unsupported);
+      expect(installed).toMatchObject({ exitCode: 0 });
+      expect(JSON.parse(installed.stdout)).toEqual({
+        adapter: "cli",
+        args: ["--version"],
+      });
+      expect(installed.stderr).toBe(
+        `${notice} Install or select a supported release with your version manager (for example nvm or fnm), make it the \`node\` on PATH for this shell or for the agent client that starts REA, then restart REA. ${unchanged}`,
+      );
+
+      const pin = await workspace.write(".nvmrc", "v24.18.0\n");
+      await expect(run(unsupported)).resolves.toMatchObject({
+        exitCode: 0,
+        stderr: `${notice} This checkout pins Node.js 24.18.0 in ${pin}; select it with your version manager (for example \`nvm use\` or \`fnm use\` in ${workspace.root}, or \`nvm use 24.18.0\` with nvm-windows), then restart REA. ${unchanged}`,
+      });
+
+      await workspace.write(".nvmrc", "lts/*\n");
+      await expect(run(unsupported)).resolves.toMatchObject({
+        stderr: `${notice} This checkout pins its Node.js version in ${pin}; select it with your version manager (for example \`nvm use\` or \`fnm use\` in ${workspace.root}), then restart REA. ${unchanged}`,
+      });
+
+      for (const engines of [`>=${process.versions.node}`, undefined])
+        await expect(run(engines)).resolves.toMatchObject({
+          exitCode: 0,
+          stderr: "",
+        });
     },
   );
 });

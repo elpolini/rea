@@ -1,10 +1,14 @@
+import { readdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
+import { createTestTempDirectory } from "../../tests/fixtures/temporaryDirectory.js";
 import { SUPPORTED_NODE_VERSION_PROSE } from "../domain/runtimeVersion.js";
 import type { ClientRegistrationStatus } from "./ClientRegistrationStatus.js";
 import { createDoctorHostFixture as host } from "./Doctor.fixture.js";
-import { runDoctor } from "./Doctor.js";
-import { err } from "../domain/result.js";
+import { runDoctor, systemDoctorHost } from "./Doctor.js";
+import { err, ok } from "../domain/result.js";
 import { HopperReleaseError } from "./HopperReleaseFeed.js";
 
 describe("doctor runtime check", () => {
@@ -202,6 +206,100 @@ describe("doctor", () => {
       remediation:
         "Unset or update HOPPER_LAUNCHER_PATH to an executable Hopper launcher.",
     });
+  });
+});
+
+describe("doctor temporary space", () => {
+  const lowSpace = () =>
+    Promise.resolve({
+      path: "/fixture/tmp",
+      space: ok({ availableBytes: 80n * 1024n ** 2n }),
+    });
+
+  it("warns about low temporary space without failing readiness", async () => {
+    const result = await runDoctor(
+      undefined,
+      host({ temporaryStorage: lowSpace }),
+    );
+
+    expect(result).toMatchObject({ healthy: true, environment_healthy: true });
+    expect(result.checks.map(({ name }) => name).slice(0, 3)).toEqual([
+      "node",
+      "host",
+      "temporary-space",
+    ]);
+    expect(result.checks).toContainEqual(
+      expect.objectContaining({
+        name: "temporary-space",
+        ok: true,
+        classification: "warning",
+        remediation: expect.stringContaining("TMPDIR"),
+      }),
+    );
+  });
+
+  it("keeps the advisory visible in an explicit readiness scope", async () => {
+    const result = await runDoctor(
+      undefined,
+      host({
+        temporaryStorage: lowSpace,
+        clientRegistrations: () =>
+          Promise.resolve([
+            {
+              client: "codex",
+              config_path: "/home/user/.codex/config.toml",
+              command: ["/current/rea", "mcp"],
+              state: "aligned",
+              remediation: null,
+            },
+          ]),
+      }),
+      { clients: ["codex"] },
+    );
+
+    expect(result.healthy).toBe(true);
+    expect(result.scope_checks.map(({ name }) => name)).toEqual([
+      "node",
+      "temporary-space",
+      "registration:codex",
+    ]);
+  });
+
+  it("measures the system host's temporary directory read-only", async () => {
+    const missing = join(
+      await createTestTempDirectory("rea-doctor-space-"),
+      "missing",
+    );
+    const measured: string[] = [];
+    const system = systemDoctorHost({
+      environment: {},
+      temporaryDirectory: missing,
+      storageStatistics: (path) => {
+        measured.push(path);
+        return Promise.reject(
+          Object.assign(new Error("controlled statfs failure"), {
+            code: "EACCES",
+          }),
+        );
+      },
+    });
+    try {
+      await expect(system.temporaryStorage?.()).resolves.toEqual({
+        path: missing,
+        space: {
+          ok: false,
+          error: {
+            reason: "statfs_failed",
+            code: "EACCES",
+            message: "controlled statfs failure",
+          },
+        },
+      });
+      expect(measured).toEqual([missing]);
+      await expect(readdir(dirname(missing))).resolves.toEqual([]);
+    } finally {
+      await system.close?.();
+    }
   });
 });
 
