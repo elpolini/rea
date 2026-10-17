@@ -76,6 +76,14 @@ try {
           decoded.manifest.includes(decoded.metadata.package_name),
         String(decoded.metadata.package_name),
       );
+      const entryPoints = decoded.entry_points;
+      check(
+        "manifest entry points parsed from the complete manifest",
+        entryPoints !== null,
+        entryPoints === null
+          ? "unavailable"
+          : `${entryPoints.components.length} component(s), ${entryPoints.components.filter(({ launcher }) => launcher).length} launcher(s), ${entryPoints.deep_links.length} deep link(s)`,
+      );
       check(
         "string resources projected",
         decoded.strings.length > 0,

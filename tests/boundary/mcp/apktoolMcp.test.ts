@@ -35,6 +35,52 @@ const results: Readonly<Record<string, unknown>> = {
     },
     manifest:
       '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.rea.apktool.probe"/>',
+    entry_points: {
+      components: [
+        {
+          kind: "activity",
+          name: "com.rea.apktool.probe.MainActivity",
+          target_activity: null,
+          exported: true,
+          enabled: null,
+          permission: null,
+          launcher: false,
+          intent_filters: [
+            {
+              actions: ["android.intent.action.VIEW"],
+              categories: ["android.intent.category.BROWSABLE"],
+              auto_verify: true,
+              data: [
+                {
+                  scheme: "https",
+                  host: "probe.example",
+                  port: null,
+                  path: null,
+                  path_prefix: "/item",
+                  path_pattern: null,
+                  path_advanced_pattern: null,
+                  path_suffix: null,
+                  mime_type: null,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      deep_links: [
+        {
+          component: "com.rea.apktool.probe.MainActivity",
+          scheme: "https",
+          host: "probe.example",
+          port: null,
+          path: "/item",
+          path_kind: "prefix",
+          browsable: true,
+          auto_verify: true,
+          uri: "https://probe.example/item*",
+        },
+      ],
+    },
     strings: [{ name: "app_name", value: "ApktoolProbe" }],
     locale: null,
     locales: ["de"],
@@ -90,6 +136,8 @@ it("advertises exact valid Apktool schemas and records inline evidence through M
   expect(evidence.provider.id).toBe("apktool");
   expect(evidence.normalized_result).toMatchObject({
     metadata: { package_name: "com.rea.apktool.probe", version_name: "1.2.3" },
+    entry_points: (results.decode_android_resources as Record<string, unknown>)
+      .entry_points,
     coverage: "complete",
   });
 });

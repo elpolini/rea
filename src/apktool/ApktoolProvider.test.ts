@@ -12,7 +12,10 @@ import { describe, expect, onTestFinished, test } from "vitest";
 
 import { ApktoolProvider } from "./ApktoolProvider.js";
 import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
-import { apktoolRequestSchema } from "../domain/apktool/apktoolResourceAnalysis.js";
+import {
+  apktoolRequestSchema,
+  apktoolResultSchemas,
+} from "../domain/apktool/apktoolResourceAnalysis.js";
 import type { ApktoolRequest } from "../domain/apktool/apktoolResourceAnalysis.js";
 
 const it = test.skipIf(process.platform === "win32");
@@ -196,6 +199,7 @@ it("decodes resources with target identity, metadata, and strings", async () => 
     package_name: "com.rea.apktool.probe",
   });
   expect(result.manifest).toContain('package="com.rea.apktool.probe"');
+  expect(result.entry_points).toEqual({ components: [], deep_links: [] });
   expect(result.strings).toEqual([
     { name: "api_endpoint", value: "https://api.example.com/v1" },
     { name: "app_name", value: "ApktoolProbe" },
@@ -554,12 +558,55 @@ describe("truncated manifest prefixes", () => {
     expect(result.value.result).toMatchObject({
       coverage: "partial",
       manifest: manifest.slice(0, 512 * 1024),
+      entry_points: null,
       metadata: { package_name: null, version_name: "1.2.3" },
     });
     expect(result.value.limitations.join(" ")).toContain(
       "manifest is truncated",
     );
   });
+});
+
+it("projects manifest entry points with their omissions in the result contract", async () => {
+  const { command, root } = await writeApktoolStub((root) =>
+    decodeStub({ manifestFile: join(root, "entry-AndroidManifest.xml") })(root),
+  );
+  await writeFile(
+    join(root, "entry-AndroidManifest.xml"),
+    [
+      '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.rea.apktool.probe">',
+      "  <application>",
+      '    <activity android:name=".Main" android:exported="true">',
+      "      <intent-filter>",
+      '        <action android:name="android.intent.action.VIEW"/>',
+      '        <category android:name="android.intent.category.BROWSABLE"/>',
+      '        <data android:scheme="https" android:host="probe.example"/>',
+      "      </intent-filter>",
+      "    </activity>",
+      "    <receiver/>",
+      "  </application>",
+      "</manifest>",
+    ].join("\n"),
+  );
+  const apk = await apkFixture(root);
+  const result = await providerOver(command).execute({
+    operation: "decode_android_resources",
+    input: { path: apk.path, include_strings: false },
+  });
+  if (!result.ok) throw result.error;
+  const projected = apktoolResultSchemas.decode_android_resources.parse(
+    result.value.result,
+  );
+  expect(projected.entry_points?.components.map(({ name }) => name)).toEqual([
+    "com.rea.apktool.probe.Main",
+  ]);
+  expect(projected.entry_points?.deep_links).toMatchObject([
+    { uri: "https://probe.example", browsable: true },
+  ]);
+  expect(projected.coverage).toBe("partial");
+  expect(result.value.limitations.join(" ")).toContain(
+    "entry_points omits 1 malformed manifest declaration(s): <receiver> at line 10 without android:name",
+  );
 });
 
 it("retains failed workspace cleanup and retries it on close", async () => {

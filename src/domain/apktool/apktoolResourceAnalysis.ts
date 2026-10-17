@@ -81,6 +81,103 @@ const client = z.strictObject({
   apktool_version: z.string().min(1).nullable(),
 });
 
+/** Manifest component elements whose intent filters are projected. */
+export const ANDROID_ENTRY_POINT_KINDS = [
+  "activity",
+  "activity-alias",
+  "service",
+  "receiver",
+] as const;
+
+/** `<data>` path attributes, in the order Android's parser reads them. */
+export const ANDROID_DEEP_LINK_PATH_KINDS = [
+  "exact",
+  "prefix",
+  "pattern",
+  "advanced_pattern",
+  "suffix",
+] as const;
+
+const declaredValue = z.string().nullable();
+const declaredBoolean = z
+  .boolean()
+  .nullable()
+  .describe(
+    "Literal true/false as declared; null when undeclared or not literal, such as a @bool reference (see limitations)",
+  );
+
+const androidIntentDataSchema = z.strictObject({
+  scheme: declaredValue,
+  host: declaredValue,
+  port: declaredValue,
+  path: declaredValue,
+  path_prefix: declaredValue,
+  path_pattern: declaredValue,
+  path_advanced_pattern: declaredValue,
+  path_suffix: declaredValue,
+  mime_type: declaredValue,
+});
+
+const androidIntentFilterSchema = z.strictObject({
+  actions: z.array(z.string().min(1)),
+  categories: z.array(z.string().min(1)),
+  auto_verify: declaredBoolean,
+  data: z.array(androidIntentDataSchema),
+});
+
+const androidComponentSchema = z.strictObject({
+  kind: z.enum(ANDROID_ENTRY_POINT_KINDS),
+  name: z
+    .string()
+    .min(1)
+    .describe(
+      "Class name as declared; relative names are resolved against the manifest package",
+    ),
+  target_activity: z.string().min(1).nullable(),
+  exported: declaredBoolean,
+  enabled: declaredBoolean,
+  permission: declaredValue,
+  launcher: z
+    .boolean()
+    .describe(
+      "An activity or alias filter declares action MAIN with category LAUNCHER",
+    ),
+  intent_filters: z.array(androidIntentFilterSchema),
+});
+
+const androidDeepLinkSchema = z.strictObject({
+  component: z.string().min(1),
+  scheme: z.string(),
+  host: declaredValue,
+  port: declaredValue,
+  path: declaredValue,
+  path_kind: z.enum(ANDROID_DEEP_LINK_PATH_KINDS).nullable(),
+  browsable: z.boolean(),
+  auto_verify: declaredBoolean,
+  uri: z.string().describe("Display form only; match on the structured fields"),
+});
+
+/**
+ * Entry points declared by the decoded manifest. Components are observed
+ * declarations; deep links are derived from activity and alias filters that
+ * declare a scheme, combining that filter's schemes, authorities, and paths.
+ * Resource references stay as declared text rather than being resolved.
+ */
+export const androidEntryPointsSchema = z.strictObject({
+  components: z.array(androidComponentSchema),
+  deep_links: z
+    .array(androidDeepLinkSchema)
+    .describe(
+      "Derived per intent filter: schemes x host/port authorities x paths",
+    ),
+});
+
+export type AndroidEntryPoints = z.infer<typeof androidEntryPointsSchema>;
+export type AndroidEntryPointComponent = z.infer<typeof androidComponentSchema>;
+export type AndroidIntentFilter = z.infer<typeof androidIntentFilterSchema>;
+export type AndroidIntentData = z.infer<typeof androidIntentDataSchema>;
+export type AndroidDeepLink = z.infer<typeof androidDeepLinkSchema>;
+
 /** Portable Apktool observations with explicit coverage limitations. */
 export const apktoolResultSchemas = {
   inspect_apktool_client: z.strictObject({
@@ -106,6 +203,11 @@ export const apktoolResultSchemas = {
       package_name: z.string().nullable(),
     }),
     manifest: z.string().nullable(),
+    entry_points: androidEntryPointsSchema
+      .nullable()
+      .describe(
+        "Components and deep links parsed from the decoded manifest; null when the manifest is missing or truncated",
+      ),
     strings: z.array(
       z.strictObject({
         name: z.string().min(1),

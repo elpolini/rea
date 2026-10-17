@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  parseApktoolYml,
-  parseDecodedStrings,
-  parseManifestPackage,
-} from "./ApktoolDecodeOutput.js";
+import { parseApktoolYml, parseDecodedStrings } from "./ApktoolDecodeOutput.js";
 
 const REAL_YML = [
   "!!brut.androlib.meta.MetaInfo",
@@ -105,48 +101,6 @@ describe("parseApktoolYml", () => {
       minSdkVersion: null,
       targetSdkVersion: null,
     });
-  });
-});
-
-describe("parseManifestPackage", () => {
-  it("reads the package attribute from a decoded manifest", () => {
-    const manifest =
-      '<?xml version="1.0" encoding="utf-8" standalone="no"?><manifest xmlns:android="http://schemas.android.com/apk/res/android" android:compileSdkVersion="34" package="com.rea.apktool.probe" platformBuildVersionCode="34">';
-    expect(parseManifestPackage(`${manifest}</manifest>`)).toBe(
-      "com.rea.apktool.probe",
-    );
-  });
-
-  it("reads package with reordered or single-quoted XML attributes", () => {
-    expect(
-      parseManifestPackage("<manifest debug='false' package='org.rea.app' />"),
-    ).toBe("org.rea.app");
-  });
-
-  it("reports null when no package attribute exists", () => {
-    expect(parseManifestPackage("<manifest>\n</manifest>\n")).toBeNull();
-  });
-
-  it("reads the package when unrelated manifest text contains U+FFFD", () => {
-    expect(
-      parseManifestPackage(
-        '<manifest package="org.rea.app"><application label="\uFFFD"/></manifest>',
-      ),
-    ).toBe("org.rea.app");
-  });
-
-  it("still rejects malformed attributes alongside U+FFFD", () => {
-    expect(() =>
-      parseManifestPackage(
-        '<manifest package=org.rea.app><application label="\uFFFD"/></manifest>',
-      ),
-    ).toThrow(/AndroidManifest.xml is not well-formed XML/u);
-  });
-
-  it("rejects a well-formed document with the wrong root element", () => {
-    expect(() => parseManifestPackage("<resources/>")).toThrowError(
-      new TypeError("AndroidManifest.xml root must be <manifest>"),
-    );
   });
 });
 

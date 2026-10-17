@@ -51,15 +51,6 @@ export const parseApktoolYml = (yml: string): ApktoolMetadata => {
   };
 };
 
-/** Read the package attribute from the decoded Android manifest root. */
-export const parseManifestPackage = (manifest: string): string | null => {
-  const document = parseXml(manifest, "AndroidManifest.xml");
-  const root = document.documentElement;
-  if (root === null || root.nodeName !== "manifest")
-    throw new TypeError("AndroidManifest.xml root must be <manifest>");
-  return root.getAttribute("package") || null;
-};
-
 export interface DecodedStringEntry {
   readonly name: string;
   readonly value: string;

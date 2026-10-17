@@ -65,11 +65,8 @@ import {
   type ApktoolCommandSelection,
   type ApktoolClientIdentity,
 } from "./ApktoolConfiguration.js";
-import {
-  parseApktoolYml,
-  parseDecodedStrings,
-  parseManifestPackage,
-} from "./ApktoolDecodeOutput.js";
+import { parseApktoolYml, parseDecodedStrings } from "./ApktoolDecodeOutput.js";
+import { projectManifestRead } from "./ApktoolManifest.js";
 
 /** Stable identity for the Apktool resource-decoding provider. */
 export const APKTOOL_PROVIDER_IDENTITY = {
@@ -745,11 +742,12 @@ export class ApktoolProvider {
         operation,
         signal,
       );
-      const manifest = manifestRead.text;
-      const packageName =
-        manifest === null || manifestRead.truncated
-          ? null
-          : parseManifestPackage(manifest);
+      const manifestFacts = projectManifestRead(
+        manifestRead,
+        MANIFEST_MAX_BYTES,
+      );
+      if (!manifestFacts.ok) throw manifestFacts.error;
+      const manifest = manifestFacts.value;
       const stringsDirectory =
         input.locale === undefined
           ? "values"
@@ -773,7 +771,7 @@ export class ApktoolProvider {
       throwIfCancelled(operation, signal);
       const coverage =
         (stringsXml !== null && parsedStrings.entries.length > MAX_STRINGS) ||
-        manifestRead.truncated ||
+        manifest.coverage === "partial" ||
         stringsRead.truncated ||
         parsedStrings.unparsedCount > 0 ||
         files.capped
@@ -790,9 +788,10 @@ export class ApktoolProvider {
               version_code: metadata.versionCode,
               min_sdk_version: metadata.minSdkVersion,
               target_sdk_version: metadata.targetSdkVersion,
-              package_name: packageName,
+              package_name: manifest.packageName,
             },
-            manifest,
+            manifest: manifestRead.text,
+            entry_points: manifest.entryPoints,
             strings: bounded,
             locale: input.locale ?? null,
             locales: files.locales,
@@ -825,11 +824,7 @@ export class ApktoolProvider {
                     `strings reports the first ${String(MAX_STRINGS)} of ${String(parsedStrings.entries.length)} entries`,
                   ]
                 : []),
-              ...(manifestRead.truncated
-                ? [
-                    `manifest is truncated at ${String(MANIFEST_MAX_BYTES)} bytes`,
-                  ]
-                : []),
+              ...manifest.limitations,
               ...(stringsRead.truncated
                 ? [
                     `strings.xml exceeds the ${String(STRINGS_XML_MAX_BYTES)}-byte projection budget`,

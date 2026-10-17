@@ -759,7 +759,12 @@ carrying two resource locales — launcher version, on-disk digest agreement
 with the reported target identity, apktool.yml metadata projection
 (1.2.3, SDK 24–34), manifest package agreement, and both the default and
 `de` string tables projected through the locale option. Parser goldens in
-`src/apktool/ApktoolDecodeOutput.test.ts` come from the same decode. See
+`src/apktool/ApktoolDecodeOutput.test.ts` come from the same decode. The
+lane also checks that `entry_points` was parsed from the complete manifest;
+the Windows record for that check (Apktool 2.12.1, JDK 21,
+`ApiDemos-debug.apk`) found 351 components, one launcher, and no deep links,
+and its manifest excerpt is the golden in
+`src/apktool/ApktoolManifest.test.ts`. See
 [Apktool resource analysis](apktool-resource-analysis.md) for boundaries and
 budgets.
 
