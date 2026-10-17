@@ -249,8 +249,8 @@ const registerReferenceSourceCommand = (
     }),
     options: z.object({
       detail: z
-        .enum(["complete", "summary"])
-        .default("complete")
+        .enum(["full", "summary"])
+        .default("full")
         .describe(
           "Complete committed graph or compact historical-source summary",
         ),
