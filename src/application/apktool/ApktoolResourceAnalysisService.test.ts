@@ -142,6 +142,7 @@ const decodeResult = (path: string, bytes: number, sha256: string) => ({
     package_name: "com.example.app",
   },
   manifest: "<manifest/>",
+  entry_points: { components: [], deep_links: [] },
   strings: [],
   locale: null,
   locales: [],
