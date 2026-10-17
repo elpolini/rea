@@ -106,6 +106,7 @@ describe("skill recovery backup selection", () => {
     );
 
     if (result.ok) throw new Error("Expected the injected write failure");
+    if (result.error._tag !== "SetupSkillInstallError") throw result.error;
     expect(result.error.rollbackFailures).toEqual([
       { path: manifest, reason: "injected rollback failure" },
     ]);
@@ -146,6 +147,7 @@ describe("skill recovery byte preservation", () => {
       remove: async (path) => rm(path, { force: true }),
     });
     if (result.ok) throw new Error("Expected the injected write failure");
+    if (result.error._tag !== "SetupSkillInstallError") throw result.error;
     expect(result.error.recoveryBackupPaths).toContain(recovery);
     expect(await readFile(recovery)).toEqual(original);
     expect(await readFile(firstBackup, "utf8")).toBe(
@@ -262,6 +264,7 @@ describe("skill directory admission", () => {
         "claude_code",
       ]);
       if (result.ok) throw new Error("Expected linked directory refusal");
+      if (result.error._tag !== "SetupSkillInstallError") throw result.error;
       expect(result.error.stage).toBe("prepare");
       expect(result.error.path).toBe(linked);
       expect(result.error.reason).toContain("symbolic link");
@@ -316,6 +319,7 @@ describe("canonical skill transaction", () => {
     );
 
     if (result.ok) throw new Error("Expected backup failure");
+    if (result.error._tag !== "SetupSkillInstallError") throw result.error;
     expect(result.error.stage).toBe("backup");
     expect(result.error.rollbackFailures).toEqual([]);
     expect(writes).toEqual([]);
@@ -373,6 +377,7 @@ describe("canonical skill transaction", () => {
     );
 
     if (result.ok) throw new Error("Expected write failure");
+    if (result.error._tag !== "SetupSkillInstallError") throw result.error;
     expect(result.error.stage).toBe("write");
     expect(result.error.path).toBe(native);
     expect(result.error.rollbackFailures).toEqual([
@@ -416,6 +421,7 @@ describe("canonical skill discovery", () => {
         await chmod(destination, 0o200);
         const result = await installCanonicalSkill(home);
         if (result.ok) throw new Error("Expected unreadable skill failure");
+        if (result.error._tag !== "SetupSkillInstallError") throw result.error;
         expect(result.error.stage).toBe("prepare");
       } finally {
         await chmod(destination, 0o600);

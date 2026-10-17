@@ -4,6 +4,7 @@ import { runSetup } from "./Setup.js";
 import type { SetupProgressEvent } from "./SetupTypes.js";
 import { FakeSetupHost, options } from "./Setup.fixture.js";
 import { SetupSkillInstallError } from "./SetupSkill.js";
+import { SkillBundleUnavailableError } from "./SkillBundle.js";
 import { err, ok } from "../domain/result.js";
 import { HopperReleaseError } from "./HopperReleaseFeed.js";
 
@@ -131,6 +132,157 @@ describe("selected skill admission", () => {
     expect(host.configurations).toBe(0);
     expect(host.hopperInstalls).toBe(0);
     expect(host.skillInstalls).toBe(0);
+  });
+});
+
+describe("skill bundle admission", () => {
+  const missingCheckoutBundle = () =>
+    err(
+      new SkillBundleUnavailableError({
+        state: "missing",
+        installation: "source_checkout",
+        path: "/checkout/rea/skills/reverse-engineer-anything/SKILL.md",
+        detail:
+          "/checkout/rea/skills/reverse-engineer-anything/SKILL.md does not exist",
+        action:
+          "Regenerate it from .agents/skills/reverse-engineer-anything: run `npm run build:cached` in the source checkout /checkout/rea, then run setup again.",
+      }),
+    );
+
+  it.each([
+    ["dry run", { dryRun: true, approved: false }],
+    ["approved", { approved: true }],
+  ] as const)(
+    "reports a missing generated skill before any change (%s)",
+    async (_mode, selection) => {
+      const host = new FakeSetupHost();
+      host.hopper = "/Applications/Hopper";
+      host.clients = [{ name: "claude_code", configPath: "/claude.json" }];
+      host.skillBundle = missingCheckoutBundle();
+
+      const result = await runSetup(
+        { ...options(false), ...selection, clientIds: ["claude_code"] },
+        host,
+      );
+
+      expect(result).toMatchObject({
+        status: "needs_human",
+        code: "skill_install_failed",
+        appliedActions: [],
+        clients: {},
+      });
+      expect(result.plannedActions.map(({ kind }) => kind)).toEqual([
+        "configure_client",
+        "install_skill",
+      ]);
+      expect(result.remediation).toContain(
+        "The generated REA skill bundle is missing: /checkout/rea/skills/reverse-engineer-anything/SKILL.md does not exist.",
+      );
+      expect(result.remediation).toContain(
+        "run `npm run build:cached` in the source checkout /checkout/rea",
+      );
+      expect(result.remediation).toContain(
+        "To configure claude_code without installing the skill, rerun setup with --skill=false.",
+      );
+      expect(host.configurations).toBe(0);
+      expect(host.skillInstalls).toBe(0);
+      expect(host.hopperInstalls).toBe(0);
+    },
+  );
+
+  it("refuses a stale bundle even when installed copies already match it", async () => {
+    const host = new FakeSetupHost();
+    host.skill = "unchanged";
+    host.skillBundle = err(
+      new SkillBundleUnavailableError({
+        state: "stale",
+        installation: "package",
+        path: "/usr/lib/node_modules/rea-agents/skills/reverse-engineer-anything/SKILL.md",
+        detail: "it declares an older tool_count",
+        action:
+          "Reinstall rea-agents@6.5.0 with the package manager that owns /usr/lib/node_modules/rea-agents, then run setup again.",
+      }),
+    );
+
+    const result = await runSetup(
+      { ...options(true), skillClientIds: ["shared"] },
+      host,
+    );
+
+    expect(result).toMatchObject({
+      status: "needs_human",
+      code: "skill_install_failed",
+      appliedActions: [],
+    });
+    expect(result.remediation).toContain("Reinstall rea-agents@6.5.0");
+    expect(result.remediation).not.toContain("--skill=false");
+    expect(host.skillInstalls).toBe(0);
+  });
+
+  it("does not require the bundle when setup omits the skill", async () => {
+    const host = new FakeSetupHost();
+    host.hopper = "/Applications/Hopper";
+    host.clients = [{ name: "claude_code", configPath: "/claude.json" }];
+    host.skillBundle = missingCheckoutBundle();
+
+    const result = await runSetup(
+      { ...options(true), clientIds: ["claude_code"], installSkill: false },
+      host,
+    );
+
+    expect(result.status).toBe("ready");
+    expect(result.appliedActions).toEqual(["configured_claude_code"]);
+    expect(host.skillBundleInspections).toBe(0);
+  });
+
+  it("rechecks the bundle after approval before changing clients", async () => {
+    const host = new FakeSetupHost();
+    host.hopper = "/Applications/Hopper";
+    host.clients = [{ name: "claude_code", configPath: "/claude.json" }];
+
+    const result = await runSetup(
+      { ...options(false), clientIds: ["claude_code"], structured: false },
+      host,
+      async () => {
+        host.skillBundle = missingCheckoutBundle();
+        return true;
+      },
+    );
+
+    expect(result).toMatchObject({
+      status: "needs_human",
+      code: "skill_install_failed",
+      appliedActions: [],
+    });
+    expect(host.skillBundleInspections).toBe(2);
+    expect(host.configurations).toBe(0);
+    expect(host.skillInstalls).toBe(0);
+  });
+
+  it("does not suggest --skill=false once clients are configured", async () => {
+    const host = new FakeSetupHost();
+    host.hopper = "/Applications/Hopper";
+    host.clients = [{ name: "claude_code", configPath: "/claude.json" }];
+    // A concurrent checkout build can remove the bundle after admission.
+    const regenerating = missingCheckoutBundle();
+    if (regenerating.ok) throw new Error("Expected an unavailable bundle");
+    host.skillBundleAtInstall = regenerating.error;
+
+    const result = await runSetup(
+      { ...options(true), clientIds: ["claude_code"] },
+      host,
+    );
+
+    expect(result).toMatchObject({
+      status: "needs_human",
+      code: "skill_install_failed",
+      appliedActions: ["configured_claude_code"],
+    });
+    expect(result.remediation).toContain(
+      "run `npm run build:cached` in the source checkout /checkout/rea, then run setup again.",
+    );
+    expect(result.remediation).not.toContain("--skill=false");
+    expect(host.skillInstalls).toBe(1);
   });
 });
 

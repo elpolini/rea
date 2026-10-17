@@ -1,7 +1,15 @@
+import { spawn } from "node:child_process";
 import { EventEmitter, once } from "node:events";
-import { readFile, writeFile } from "node:fs/promises";
+import {
+  access,
+  copyFile,
+  mkdir,
+  readFile,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { expect, it, vi } from "vitest";
@@ -189,6 +197,61 @@ it("supervises protocol stdin errors until the owned job and stream close", asyn
   expect(calls).toContain("process_terminate");
   expect(calls).toContain("process_close");
 });
+
+it.runIf(process.platform === "win32")(
+  "attributes a refused exclusive command to unavailable Windows lock ownership",
+  async () => {
+    // A source checkout without native/windows/build: the runner, not the
+    // wrapped generator, needs the native Job Object owner.
+    const root = await createTestTempDirectory("rea-runner-without-native-");
+    for (const path of [
+      "scripts/run-exclusive-command.mjs",
+      "scripts/lib/windows-owned-command.mjs",
+      "src/windows/WindowsNativeLoader.ts",
+      "src/generatedPackageMetadata.ts",
+    ]) {
+      await mkdir(dirname(join(root, path)), { recursive: true });
+      await copyFile(resolve(path), join(root, path));
+    }
+    await writeFile(join(root, "package.json"), '{"type":"module"}\n');
+    await symlink(
+      resolve("node_modules"),
+      join(root, "node_modules"),
+      "junction",
+    );
+    const marker = join(root, "command-ran");
+    const supervisor = spawn(
+      process.execPath,
+      [
+        join(root, "scripts/run-exclusive-command.mjs"),
+        "artifacts",
+        process.execPath,
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran")`,
+      ],
+      { cwd: root, stdio: ["ignore", "pipe", "pipe", "ipc"] },
+    );
+    let stderr = "";
+    supervisor.stdout?.resume();
+    supervisor.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    const [code] = await once(supervisor, "close");
+
+    expect(code, stderr).toBe(1);
+    expect(stderr).toContain(
+      `run-exclusive did not start \`${process.execPath} -e`,
+    );
+    expect(stderr).toContain(
+      "keeps the artifacts lock until every command descendant exits through a native Job Object owner, which is unavailable.",
+    );
+    expect(stderr).toContain(
+      "Missing packaged Windows native file native/windows/build/manifest.json (ENOENT)",
+    );
+    expect(stderr).toContain("See CONTRIBUTING.md#windows-source-checkouts.");
+    await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
 
 it.runIf(process.platform === "win32")(
   "supervises native protocol stdin through Job Object close",

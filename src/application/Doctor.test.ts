@@ -10,6 +10,9 @@ import { createDoctorHostFixture as host } from "./Doctor.fixture.js";
 import { runDoctor, systemDoctorHost } from "./Doctor.js";
 import { err, ok } from "../domain/result.js";
 import { HopperReleaseError } from "./HopperReleaseFeed.js";
+import { SkillBundleUnavailableError } from "./SkillBundle.js";
+import { CATALOG_IDENTITY } from "../catalogIdentity.js";
+import { PRODUCT_IDENTITY } from "../identity.js";
 
 describe("doctor runtime check", () => {
   it("reports Node 25 as unsupported", async () => {
@@ -377,6 +380,108 @@ describe("doctor installation identity", () => {
         classification: "config_drift",
       }),
     );
+  });
+});
+
+describe("doctor skill bundle ownership", () => {
+  it("names the source checkout build when this runtime's skill bundle is unavailable", async () => {
+    const unavailable = new SkillBundleUnavailableError({
+      state: "missing",
+      installation: "source_checkout",
+      path: "/checkout/rea/skills/reverse-engineer-anything/SKILL.md",
+      detail:
+        "/checkout/rea/skills/reverse-engineer-anything/SKILL.md does not exist",
+      action:
+        "Regenerate it from .agents/skills/reverse-engineer-anything: run `npm run build:cached` in the source checkout /checkout/rea, then run setup again.",
+    });
+    const missing = await runDoctor(
+      undefined,
+      host({
+        installedSkillIdentity: () => Promise.resolve(undefined),
+        skillBundle: () => Promise.resolve(err(unavailable)),
+      }),
+    );
+    expect(missing.identity?.skill).toMatchObject({
+      state: "missing",
+      remediation: unavailable.remediation,
+    });
+    expect(missing.checks).toContainEqual({
+      name: "skill:identity",
+      ok: false,
+      classification: "config_drift",
+      detail: "Installed REA skill identity is missing.",
+      remediation: unavailable.remediation,
+    });
+    expect(unavailable.remediation).toContain("npm run build:cached");
+    expect(unavailable.remediation).not.toContain("Run rea setup");
+
+    // Current metadata cannot prove current bytes without the bundle.
+    const unverified = await runDoctor(
+      undefined,
+      host({
+        installedSkillIdentity: () =>
+          Promise.resolve({
+            version: PRODUCT_IDENTITY.skillVersion,
+            toolCount: CATALOG_IDENTITY.counts.mcp_tools,
+            canonical: false,
+          }),
+        skillBundle: () => Promise.resolve(err(unavailable)),
+      }),
+    );
+    expect(unverified.healthy).toBe(false);
+    expect(unverified.identity?.skill).toMatchObject({
+      state: "unknown",
+      remediation: unavailable.remediation,
+    });
+    expect(unverified.checks).toContainEqual(
+      expect.objectContaining({
+        name: "skill:identity",
+        detail:
+          "Installed REA skill identity cannot be verified without this runtime's skill bundle.",
+      }),
+    );
+  });
+  it("names the checkout entrypoint when a current bundle needs installing", async () => {
+    const updateAction =
+      'Run setup from the source checkout to update the installed REA skill: node "/checkout/rea/scripts/rea.mjs" setup.';
+    const result = await runDoctor(
+      undefined,
+      host({
+        installedSkillIdentity: () =>
+          Promise.resolve({ version: "10", toolCount: null, canonical: false }),
+        skillBundle: () =>
+          Promise.resolve(
+            ok({ installation: "source_checkout" as const, updateAction }),
+          ),
+      }),
+    );
+    expect(result.identity?.skill).toMatchObject({
+      state: "stale",
+      remediation: updateAction,
+    });
+  });
+  it("does not inspect the bundle for an aligned skill", async () => {
+    let inspected = false;
+    const result = await runDoctor(
+      undefined,
+      host({
+        installedSkillIdentity: () =>
+          Promise.resolve({
+            version: PRODUCT_IDENTITY.skillVersion,
+            toolCount: CATALOG_IDENTITY.counts.mcp_tools,
+            canonical: true,
+          }),
+        skillBundle: () => {
+          inspected = true;
+          return Promise.reject(new Error("bundle must not be read"));
+        },
+      }),
+    );
+    expect(result.identity?.skill).toMatchObject({
+      state: "aligned",
+      remediation: null,
+    });
+    expect(inspected).toBe(false);
   });
 });
 

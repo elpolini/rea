@@ -16,12 +16,8 @@ import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 
 import { PRODUCT_IDENTITY } from "../identity.js";
-import {
-  isManagedSkillManifest,
-  MANAGED_SKILL_FILES,
-  readSkillFile,
-  skillDestinations,
-} from "./SetupSkill.js";
+import { readSkillFile, skillDestinations } from "./SetupSkill.js";
+import { isManagedSkillManifest, MANAGED_SKILL_FILES } from "./SkillBundle.js";
 import { isOwnedClientRegistrationCommand } from "./ClientRegistrationIdentity.js";
 import { CURRENT_ENTRYPOINT_PATH } from "../process/CurrentEntrypointPath.js";
 import { dshDocument } from "./DshCordisPatch.js";

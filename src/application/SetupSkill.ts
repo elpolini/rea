@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdir, readFile, rm } from "node:fs/promises";
+import { copyFile, lstat, mkdir, rm } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { dirname, join } from "node:path";
 import writeFileAtomic from "write-file-atomic";
@@ -18,20 +18,17 @@ import {
 } from "./RegularFileRead.js";
 import { clientSkillDirectories } from "./SupportedClients.js";
 import { preserveCurrentRecoveryBackup } from "./SetupRecoveryBackup.js";
-
-export const MANAGED_SKILL_FILES = [
-  "SKILL.md",
-  "references/connection-and-recovery.md",
-  "references/native-and-artifacts.md",
-  "references/javascript-applications.md",
-  "references/android-applications.md",
-  "references/runtime-observation.md",
-  "references/evidence-workflows.md",
-] as const;
-
-export const isManagedSkillManifest = (content: string): boolean =>
-  content.startsWith(`---\nname: ${PRODUCT_IDENTITY.skillName}\n`) ||
-  content.startsWith(`---\r\nname: ${PRODUCT_IDENTITY.skillName}\r\n`);
+import {
+  canonicalBundleFile,
+  isManagedSkillManifest,
+  loadCanonicalSkillBundle,
+  MANAGED_SKILL_FILES,
+  packagedSkillBundleSource,
+  skillManifestIdentity,
+  type CanonicalSkillBundle,
+  type SkillBundleSource,
+  type SkillBundleUnavailableError,
+} from "./SkillBundle.js";
 
 export const readSkillFile = (
   path: string,
@@ -70,19 +67,10 @@ const readSkillFileState = async (
   );
 
 interface CanonicalSkillFile {
-  readonly content: string;
+  readonly content: Buffer;
   readonly destination: string;
   readonly original: SkillFileState | undefined;
 }
-
-const canonicalSkillContent = (relativePath: string): Promise<string> =>
-  readFile(
-    new URL(
-      `../../skills/${PRODUCT_IDENTITY.skillName}/${relativePath}`,
-      import.meta.url,
-    ),
-    "utf8",
-  );
 
 export interface SkillInstallFileOperations {
   readonly mkdir: (path: string) => Promise<void>;
@@ -144,10 +132,11 @@ export class SetupSkillInstallError extends Error {
 }
 
 export type SkillInstallValue = "installed" | "unchanged";
-export type SkillInstallResult = Result<
-  SkillInstallValue,
-  SetupSkillInstallError
->;
+/** Expected skill setup failures, each carrying its own remediation. */
+export type SetupSkillError =
+  | SetupSkillInstallError
+  | SkillBundleUnavailableError;
+export type SkillInstallResult = Result<SkillInstallValue, SetupSkillError>;
 
 const systemSkillInstallFileOperations: SkillInstallFileOperations = {
   mkdir: async (path) => {
@@ -318,6 +307,7 @@ export const validateCanonicalSkillDirectories = async (
 };
 
 const canonicalSkillFiles = async (
+  bundle: CanonicalSkillBundle,
   home: string,
   clientIds: readonly string[],
   environment: Readonly<NodeJS.ProcessEnv> = {},
@@ -343,7 +333,7 @@ const canonicalSkillFiles = async (
         const destination = join(root, relativePath);
         return {
           destination,
-          content: await canonicalSkillContent(relativePath),
+          content: canonicalBundleFile(bundle, relativePath),
           original: await readOptionalSkillState(destination, resources),
         };
       }),
@@ -369,7 +359,8 @@ const inspectCanonicalSkill = async (
   clientIds: readonly string[] | undefined,
   environment: Readonly<NodeJS.ProcessEnv>,
   platform: NodeJS.Platform,
-  resources?: ArtifactResourceScope,
+  resources: ArtifactResourceScope | undefined,
+  bundleSource: SkillBundleSource,
 ): Promise<Result<CanonicalSkillInspection, SkillInspectionFailure>> => {
   const destinations = skillDestinations(
     home,
@@ -388,6 +379,9 @@ const inspectCanonicalSkill = async (
       cause: issues,
       manifest: undefined,
     });
+  // Without a usable bundle no copy can be proven canonical; the bundle
+  // inspection owns how that failure is reported and repaired.
+  const bundle = await loadCanonicalSkillBundle(bundleSource);
   let canonical = true;
   let manifest: string | undefined;
   let failureCause: unknown;
@@ -431,11 +425,11 @@ const inspectCanonicalSkill = async (
       if (relativePath === "SKILL.md" && manifest === undefined)
         manifest = original?.bytes.toString("utf8");
       // A mismatch settles freshness, but not coverage of later read failures.
-      if (original === undefined) rootCanonical = false;
-      else if (rootCanonical) {
-        const content = await canonicalSkillContent(relativePath);
-        rootCanonical = original.bytes.equals(Buffer.from(content, "utf8"));
-      }
+      if (original === undefined || !bundle.ok) rootCanonical = false;
+      else if (rootCanonical)
+        rootCanonical = original.bytes.equals(
+          canonicalBundleFile(bundle.value, relativePath),
+        );
     }
     if (clientIds !== undefined || rootHasFiles || rootIssues.length > 0) {
       installedDestination ||= rootHasFiles;
@@ -460,6 +454,7 @@ export const canonicalSkillNeedsInstall = async (
   environment: Readonly<NodeJS.ProcessEnv> = {},
   platform: NodeJS.Platform = process.platform,
   resources?: ArtifactResourceScope,
+  bundleSource: SkillBundleSource = packagedSkillBundleSource(platform),
 ): Promise<boolean> => {
   try {
     const inspection = await inspectCanonicalSkill(
@@ -468,6 +463,7 @@ export const canonicalSkillNeedsInstall = async (
       environment,
       platform,
       resources,
+      bundleSource,
     );
     return !inspection.ok || !inspection.value.canonical;
   } catch (cause: unknown) {
@@ -514,13 +510,18 @@ export const installCanonicalSkill = async (
   platform: NodeJS.Platform = process.platform,
   operations: SkillInstallFileOperations = systemSkillInstallFileOperations,
   resources?: ArtifactResourceScope,
+  bundleSource: SkillBundleSource = packagedSkillBundleSource(platform),
 ): Promise<SkillInstallResult> => {
   let attempted: CanonicalSkillFile[] = [];
   let stage: "prepare" | "backup" | "write" | "readback" = "prepare";
   let failingPath = "skill bundle";
   const recoveryPaths = new Map<string, string>();
+  // Prove the whole source bundle before touching any destination.
+  const bundle = await loadCanonicalSkillBundle(bundleSource);
+  if (!bundle.ok) return bundle;
   try {
     const canonical = await canonicalSkillFiles(
+      bundle.value,
       home,
       clientIds,
       environment,
@@ -528,8 +529,7 @@ export const installCanonicalSkill = async (
       resources,
     );
     const changed = canonical.filter(
-      ({ content, original }) =>
-        original?.bytes.equals(Buffer.from(content, "utf8")) !== true,
+      ({ content, original }) => original?.bytes.equals(content) !== true,
     );
     if (changed.length === 0) return ok("unchanged");
 
@@ -568,7 +568,7 @@ export const installCanonicalSkill = async (
       failingPath = destination;
       if (
         !(await readSkillFileState(destination, resources)).bytes.equals(
-          Buffer.from(content, "utf8"),
+          content,
         )
       )
         throw new Error(`skill readback mismatch: ${destination}`);
@@ -603,6 +603,7 @@ export const readInstalledSkillIdentity = async (
   environment: Readonly<NodeJS.ProcessEnv> = {},
   platform: NodeJS.Platform = process.platform,
   resources?: ArtifactResourceScope,
+  bundleSource: SkillBundleSource = packagedSkillBundleSource(platform),
 ): Promise<InstalledSkillIdentity | undefined> => {
   const inspection = await inspectCanonicalSkill(
     home,
@@ -610,23 +611,21 @@ export const readInstalledSkillIdentity = async (
     environment,
     platform,
     resources,
+    bundleSource,
   );
   if (inspection.ok && !inspection.value.installedDestination) return undefined;
   const content = inspection.ok
     ? inspection.value.manifest
     : inspection.error.manifest;
   const issues = inspection.ok ? [] : inspection.error.issues;
-  const toolCount =
+  const declared =
     content === undefined
-      ? undefined
-      : /^\s{2}tool_count:\s*(\d+)\s*$/mu.exec(content)?.[1];
+      ? { version: null, toolCount: null }
+      : skillManifestIdentity(content);
   return {
     canonical: inspection.ok && inspection.value.canonical,
-    version:
-      content === undefined
-        ? null
-        : (/^\s{2}version:\s*"([^"]+)"\s*$/mu.exec(content)?.[1] ?? null),
-    toolCount: toolCount === undefined ? null : Number.parseInt(toolCount, 10),
+    version: declared.version,
+    toolCount: declared.toolCount,
     ...(issues.length === 0 ? {} : { issues }),
   };
 };

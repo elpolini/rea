@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
 
@@ -129,6 +129,45 @@ it("pins authored `@latest` commands to the packaged version", async () => {
   expect(generated).toContain("npx -y rea-agents@6.2.0 doctor --json");
   expect(generated).not.toContain("rea-agents@latest");
   await f.generate("--check");
+});
+
+it("checks the packaged skill and catalogs without the Windows native artifact", async () => {
+  // Only `run-exclusive` needs native Job Object ownership on Windows. The
+  // generators must stay native-free so a checkout can run them directly.
+  const guard = pathToFileURL(
+    join(repositoryRoot, "tests/fixtures/windowsNativeArtifactAccessGuard.mjs"),
+  ).href;
+  const guarded = (...args: string[]) =>
+    exec(process.execPath, ["--import", guard, ...args], {
+      cwd: repositoryRoot,
+    });
+  const marker = "windows-native-artifact-access";
+  await expect(
+    guarded(
+      "--input-type=module",
+      "-e",
+      'import { existsSync } from "node:fs"; existsSync("native/windows/build/manifest.json");',
+    ),
+  ).rejects.toMatchObject({
+    code: 97,
+    stderr: expect.stringContaining(`${marker} existsSync`),
+  });
+
+  const catalogIdentity = pathToFileURL(
+    join(repositoryRoot, "dist/catalogIdentity.js"),
+  ).href;
+  for (const args of [
+    [join(repositoryRoot, "scripts/generate-skill-metadata.mjs"), "--check"],
+    [join(repositoryRoot, "scripts/generate-mcp-tool-catalog.mjs"), "--check"],
+    [
+      "--input-type=module",
+      "-e",
+      `const { createCatalogDigests } = await import(${JSON.stringify(catalogIdentity)}); createCatalogDigests();`,
+    ],
+  ]) {
+    const { stderr } = await guarded(...args);
+    expect(stderr).not.toContain(marker);
+  }
 });
 
 it("rejects catalog-dependent metadata in the authored source", async () => {

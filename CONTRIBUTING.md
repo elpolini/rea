@@ -242,6 +242,13 @@ run on Windows. See that guide for the build and artifact-verification commands
 and the separate real Windows verification prerequisites. Keep the restored or
 generated addon and manifest uncommitted.
 
+Without the artifacts, a `run-exclusive` command reports that it could not
+own its lock and does not start the wrapped command. The compiler and the
+skill and catalog generators do not need native controls: `npm run compile`
+followed by `npm run artifacts:skills` builds the runtime and the packaged
+skill that `rea setup` installs. They run without the artifact lock, so run
+them only while no other build or generation command is running.
+
 ## Documentation website
 
 The VitePress site uses the Markdown files in `docs/`. Run `npm run docs:dev`

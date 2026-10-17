@@ -139,6 +139,21 @@ paths as `unmanaged`, names the affected paths, and provides those alternatives;
 an unreadable skill identity remains `unknown`. Uninstall retains and reports
 files it cannot safely remove, including their ownership manifest.
 
+Setup installs the skill bundle that belongs to the running REA: an installed
+package ships it, and a source checkout generates it in `skills/` from
+`.agents/skills/reverse-engineer-anything` with `npm run build:cached`. Setup
+checks that bundle while planning, including `--dry-run`, and again after
+approval. If it is missing, unreadable, or declares another skill version or
+tool count, setup reports `needs_human` with `skill_install_failed` before
+changing any client: a checkout is told to run `npm run build:cached` in that
+checkout (on Windows without the native artifacts, `npm run compile` and then
+`npm run artifacts:skills`), and an installed package is told to reinstall the
+same version. `--skill=false` still configures clients without the skill.
+Doctor names the same command, and reports an installed copy whose current
+metadata cannot be compared without the bundle as `unknown`. When the bundle is
+usable, doctor's update command for a checkout is setup through that checkout's
+`scripts/rea.mjs`.
+
 `rea setup --skill-client claude_code --yes --json` refreshes and verifies the
 selected skill destination independently of MCP registration selection. The
 final `doctor.scope.skill_clients` records which skill destinations were

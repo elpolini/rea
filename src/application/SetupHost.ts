@@ -36,6 +36,10 @@ import {
   validateCanonicalSkillDirectories,
 } from "./SetupSkill.js";
 import {
+  inspectSkillBundle,
+  packagedSkillBundleSource,
+} from "./SkillBundle.js";
+import {
   clientConfigurationAligned,
   ClientConfigurationCleanupRollbackFailure,
   configureClientConfiguration,
@@ -274,6 +278,8 @@ export const systemSetupHost = (
         platform,
         resources,
       ),
+    inspectSkillBundle: () =>
+      inspectSkillBundle(packagedSkillBundleSource(platform)),
     validateSkillDirectories: (clientIds) =>
       validateCanonicalSkillDirectories(
         homeDirectory,

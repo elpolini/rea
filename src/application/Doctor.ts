@@ -43,6 +43,11 @@ import {
   type InstalledSkillIdentity,
   type SkillPathIssue,
 } from "./SetupSkill.js";
+import {
+  inspectSkillBundle,
+  packagedSkillBundleSource,
+  type SkillBundleInspection,
+} from "./SkillBundle.js";
 import { CATALOG_IDENTITY } from "../catalogIdentity.js";
 import { PRODUCT_IDENTITY, SDK_IDENTITY } from "../identity.js";
 import {
@@ -145,6 +150,8 @@ export interface DoctorHost {
   installedSkillIdentity?(
     clientIds: readonly string[] | undefined,
   ): Promise<InstalledSkillIdentity | undefined>;
+  /** The bundle setup would install, and which owner can repair or refresh it. */
+  skillBundle?(): Promise<SkillBundleInspection>;
   close?(): Promise<string | undefined>;
   clientRegistrations?(): Promise<readonly ClientRegistrationStatus[]>;
   ilspyCmdVersion?(path: string): Promise<string | undefined>;
@@ -382,9 +389,12 @@ const collectDoctorIdentity = async (
   const installedSkillIdentity =
     await host.installedSkillIdentity?.(skillClientIds);
   const skillAligned = skillIdentityAligned(installedSkillIdentity);
+  const skillBundle = skillAligned ? undefined : await host.skillBundle?.();
   return {
     checks: [
-      ...(skillAligned ? [] : [skillIdentityCheck(installedSkillIdentity)]),
+      ...(skillAligned
+        ? []
+        : [skillIdentityCheck(installedSkillIdentity, skillBundle)]),
       ...registrations
         .filter(
           (registration): registration is UnhealthyClientRegistrationStatus =>
@@ -412,13 +422,13 @@ const collectDoctorIdentity = async (
       skill: {
         installed_version: installedSkillIdentity?.version ?? null,
         installed_tool_count: installedSkillIdentity?.toolCount ?? null,
-        state: skillIdentityState(installedSkillIdentity),
+        state: skillIdentityState(installedSkillIdentity, skillBundle),
         ...(installedSkillIdentity?.issues === undefined
           ? {}
           : { issues: installedSkillIdentity.issues }),
         remediation: skillAligned
           ? null
-          : skillIdentityRemediation(installedSkillIdentity),
+          : skillIdentityRemediation(installedSkillIdentity, skillBundle),
       },
       registrations,
     },
@@ -434,41 +444,51 @@ const skillIdentityAligned = (
 
 const skillIdentityState = (
   identity: InstalledSkillIdentity | undefined,
+  bundle?: SkillBundleInspection,
 ): DoctorSkillState => {
   if (identity?.issues?.some(({ kind }) => kind === "unreadable"))
     return "unknown";
   if ((identity?.issues?.length ?? 0) > 0) return "unmanaged";
-  return identity === undefined
-    ? "missing"
-    : skillIdentityAligned(identity)
-      ? "aligned"
-      : "stale";
+  if (identity === undefined) return "missing";
+  if (skillIdentityAligned(identity)) return "aligned";
+  // Current metadata without a usable bundle leaves the bytes unverified.
+  return bundle?.ok === false &&
+    identity.version === PRODUCT_IDENTITY.skillVersion &&
+    identity.toolCount === CATALOG_IDENTITY.counts.mcp_tools
+    ? "unknown"
+    : "stale";
 };
 
 const skillIdentityRemediation = (
   identity: InstalledSkillIdentity | undefined,
+  bundle?: SkillBundleInspection,
 ): string => {
   const issues = identity?.issues;
   if (issues !== undefined && issues.length > 0)
     return `${issues.map(({ path, detail }) => `${detail} (${path})`).join(" ")} Verify the reported paths and use regular skill directories, or run rea setup with --skill=false to configure the client without installing the skill.`;
-  return "Run rea setup to update the installed REA skill.";
+  // Setup can only install the bundle this runtime has; name its owner first.
+  if (bundle === undefined)
+    return "Run rea setup to update the installed REA skill.";
+  return bundle.ok ? bundle.value.updateAction : bundle.error.remediation;
 };
 
 const skillIdentityCheck = (
   identity: InstalledSkillIdentity | undefined,
+  bundle?: SkillBundleInspection,
 ): DoctorCheck => {
   const issues = identity?.issues;
+  const state = skillIdentityState(identity, bundle);
   return {
     name: "skill:identity",
     ok: false,
     classification: "config_drift",
     detail:
       issues !== undefined && issues.length > 0
-        ? `Selected skill identity is ${skillIdentityState(identity)}: ${issues.map(({ path }) => path).join(", ")}.`
-        : identity === undefined
-          ? "Installed REA skill identity is missing."
-          : "Installed REA skill identity is stale.",
-    remediation: skillIdentityRemediation(identity),
+        ? `Selected skill identity is ${state}: ${issues.map(({ path }) => path).join(", ")}.`
+        : state === "unknown"
+          ? "Installed REA skill identity cannot be verified without this runtime's skill bundle."
+          : `Installed REA skill identity is ${state}.`,
+    remediation: skillIdentityRemediation(identity, bundle),
   };
 };
 
@@ -692,6 +712,7 @@ export const systemDoctorHost = (
         platform,
         resources,
       ),
+    skillBundle: () => inspectSkillBundle(packagedSkillBundleSource(platform)),
     close: async () => {
       controller.abort(STARTUP_OWNER_CLOSED);
       try {

@@ -1,5 +1,9 @@
 import { skillDestinations } from "./SetupSkill.js";
 import type {
+  SkillBundleInspection,
+  SkillBundleUnavailableError,
+} from "./SkillBundle.js";
+import type {
   ClientConfigurationInspection,
   ClientConfigurationResult,
   SetupHost,
@@ -136,14 +140,27 @@ export class FakeSetupHost implements SetupHost {
     );
   skillNeedsInstall = (): Promise<boolean> =>
     Promise.resolve(this.skill !== "unchanged");
+  skillBundle: SkillBundleInspection = ok({
+    installation: "package",
+    updateAction: "Run rea setup to update the installed REA skill.",
+  });
+  skillBundleInspections = 0;
+  inspectSkillBundle = (): Promise<SkillBundleInspection> => {
+    this.skillBundleInspections += 1;
+    return Promise.resolve(this.skillBundle);
+  };
   validateSkillDirectories = (
     clientIds: readonly string[],
   ): Promise<Result<void, SetupSkillInstallError>> => {
     this.skillDirectoryValidations.push(clientIds);
     return Promise.resolve(ok(undefined));
   };
+  /** A bundle that becomes unavailable after admission. */
+  skillBundleAtInstall: SkillBundleUnavailableError | undefined;
   installSkill = () => {
     this.skillInstalls += 1;
+    if (this.skillBundleAtInstall !== undefined)
+      return Promise.resolve(err(this.skillBundleAtInstall));
     return Promise.resolve(
       this.skill === "failed"
         ? err(

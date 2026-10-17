@@ -7,7 +7,7 @@ import { parse as parseJsonc } from "jsonc-parser";
 import { readClientRegistrationStatuses } from "../../../src/application/ClientRegistrationStatus.js";
 import { configureClientConfiguration } from "../../../src/application/SetupClientConfiguration.js";
 import { systemSetupHost } from "../../../src/application/SetupHost.js";
-import { MANAGED_SKILL_FILES } from "../../../src/application/SetupSkill.js";
+import { MANAGED_SKILL_FILES } from "../../../src/application/SkillBundle.js";
 import { supportedClients } from "../../../src/application/SupportedClients.js";
 import { systemUninstallHost } from "../../../src/application/Uninstall.js";
 import { PRODUCT_IDENTITY } from "../../../src/identity.js";

@@ -5,12 +5,31 @@ const sourceWindowsProcess = new URL(
   "../../src/windows/WindowsOwnedProcess.ts",
   import.meta.url,
 ).href;
+const sourceWindowsNativeLoader = new URL(
+  "../../src/windows/WindowsNativeLoader.ts",
+  import.meta.url,
+).href;
 
 /** Load the source owner without requiring a generated dist tree. */
 export async function loadWindowsOwnedProcessClass() {
   const { tsImport } = await import("tsx/esm/api");
   const source = await tsImport(sourceWindowsProcess, import.meta.url);
   return source.WindowsOwnedProcess;
+}
+
+/** Load the checkout's native Windows authority as its tagged availability result. */
+export async function loadWindowsNativeAuthority() {
+  const { tsImport } = await import("tsx/esm/api");
+  const source = await tsImport(sourceWindowsNativeLoader, import.meta.url);
+  return source.systemWindowsNativeAuthority();
+}
+
+/**
+ * Attribute a refused exclusive command to the lock owner, not to the command:
+ * the wrapped build or generator may not need native controls itself.
+ */
+export function windowsOwnershipUnavailableMessage(lockName, command, reason) {
+  return `run-exclusive did not start \`${command.join(" ")}\`: on Windows it keeps the ${lockName} lock until every command descendant exits through a native Job Object owner, which is unavailable. ${reason} See CONTRIBUTING.md#windows-source-checkouts.`;
 }
 
 /** Start an owned Windows command while preserving cross-spawn's shim rules. */

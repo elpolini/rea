@@ -6,8 +6,10 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   createWindowsOwnedCommand,
+  loadWindowsNativeAuthority,
   loadWindowsOwnedProcessClass,
   superviseWindowsOwnedProcess,
+  windowsOwnershipUnavailableMessage,
 } from "./lib/windows-owned-command.mjs";
 
 const [, , lockName, ...command] = process.argv;
@@ -77,6 +79,11 @@ async function run() {
 
 async function runCommand() {
   if (process.platform === "win32") {
+    const native = await loadWindowsNativeAuthority();
+    if (!native.available)
+      throw new Error(
+        windowsOwnershipUnavailableMessage(lockName, command, native.reason),
+      );
     const WindowsOwnedProcess = await loadWindowsOwnedProcessClass();
     if (shutdownSignal !== undefined) return { code: 1 };
     child = createWindowsOwnedCommand({
@@ -85,6 +92,7 @@ async function runCommand() {
       arguments: command.slice(1),
       cwd: process.cwd(),
       environment: process.env,
+      authority: native.authority,
     });
     windowsOwnership = superviseWindowsOwnedProcess(child, {
       onCleanupDiagnostic: reportCleanupDiagnostic,

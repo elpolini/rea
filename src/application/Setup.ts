@@ -26,7 +26,7 @@ import {
 import { AnalysisError } from "../domain/analysisErrorBase.js";
 import { analysisErrorWithCleanupFailure } from "../domain/analysisErrorCleanup.js";
 import { ProviderCleanupError } from "../domain/providerCleanupError.js";
-import type { SetupSkillInstallError } from "./SetupSkill.js";
+import type { SetupSkillError } from "./SetupSkill.js";
 
 /** Discover, approve, and apply setup actions idempotently. */
 export const runSetup = async (
@@ -100,11 +100,23 @@ const runSetupWorkflow = async (
       readinessScope,
     );
   const failSkill = async (
-    error: SetupSkillInstallError,
+    error: SetupSkillError,
+    // Admission fails before any client changes; a failed install follows them.
+    unconfiguredClientIds: readonly string[] = selectedClientIds,
   ): Promise<SetupResult> => ({
-    ...(await fail(error.remediation)),
+    ...(await fail(skillFailureRemediation(error, unconfiguredClientIds))),
     code: "skill_install_failed",
   });
+  // The source bundle and the selected roots must both be usable before any
+  // client, Hopper, or skill mutation; otherwise setup would half-apply.
+  const admitSkill = async (): Promise<SetupResult | undefined> => {
+    const bundle = await host.inspectSkillBundle();
+    if (!bundle.ok) return failSkill(bundle.error);
+    const admission = await host.validateSkillDirectories(
+      selectedSkillClientIds,
+    );
+    return admission.ok ? undefined : failSkill(admission.error);
+  };
   const unsupported = await hostRemediation(host, false);
   if (unsupported !== undefined) return fail(unsupported);
   const initialState = await host.initialSetupState(options.readinessScope);
@@ -246,10 +258,8 @@ const runSetupWorkflow = async (
 
   const manualRemediation = manualClientsRemediation(planned.selectedClients);
   if (skillSelected) {
-    const admission = await host.validateSkillDirectories(
-      selectedSkillClientIds,
-    );
-    if (!admission.ok) return failSkill(admission.error);
+    const blocked = await admitSkill();
+    if (blocked !== undefined) return blocked;
   }
   if (options.dryRun === true)
     return {
@@ -301,12 +311,11 @@ const runSetupWorkflow = async (
         : {}),
     };
 
-  // Approval may pause while a skill manager changes a selected directory.
+  // Approval may pause while a skill manager changes a selected directory or
+  // a checkout build regenerates the bundle.
   if (planSelection.skillSelected) {
-    const admission = await host.validateSkillDirectories(
-      selectedSkillClientIds,
-    );
-    if (!admission.ok) return failSkill(admission.error);
+    const blocked = await admitSkill();
+    if (blocked !== undefined) return blocked;
   }
   let selectedClients: readonly SetupClient[] =
     planSelection.clientsToConfigure;
@@ -354,7 +363,7 @@ const runSetupWorkflow = async (
       selectedSkillClientIds,
     );
     if (skillFailure !== undefined) {
-      return failSkill(skillFailure);
+      return failSkill(skillFailure, []);
     }
   }
   const doctor = summarizeDoctor(await host.doctor(readinessScope));
@@ -452,7 +461,7 @@ const installSkillAction = async (
   options: SetupOptions,
   appliedActions: string[],
   skillClientIds: readonly string[],
-): Promise<SetupSkillInstallError | undefined> => {
+): Promise<SetupSkillError | undefined> => {
   const label = "REA reverse-engineering skill";
   emitProgress(options, {
     actionId: "install_skill",
@@ -503,6 +512,15 @@ const setupFailure = async (
 
 const emitProgress = (options: SetupOptions, event: SetupProgressEvent): void =>
   options.onProgress?.(event);
+
+/** A bundle failure blocks only the skill; selected clients can proceed without it. */
+const skillFailureRemediation = (
+  error: SetupSkillError,
+  clientIds: readonly string[],
+): string =>
+  error._tag === "SkillBundleUnavailableError" && clientIds.length > 0
+    ? `${error.remediation} To configure ${clientIds.join(", ")} without installing the skill, rerun setup with --skill=false.`
+    : error.remediation;
 
 const manualClientsRemediation = (
   clients: readonly SetupClient[],

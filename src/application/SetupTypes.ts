@@ -6,6 +6,7 @@ import type {
   SkillInstallResult,
   SetupSkillInstallError,
 } from "./SetupSkill.js";
+import type { SkillBundleInspection } from "./SkillBundle.js";
 import type { Result } from "../domain/result.js";
 import type { SetupClient } from "./SupportedClients.js";
 import type {
@@ -108,6 +109,8 @@ export interface SetupHost {
     command: readonly string[],
   ): Promise<ClientConfigurationInspection>;
   skillNeedsInstall(clientIds: readonly string[]): Promise<boolean>;
+  /** Whether the bundle setup installs exists and belongs to this runtime. */
+  inspectSkillBundle(): Promise<SkillBundleInspection>;
   validateSkillDirectories(
     clientIds: readonly string[],
   ): Promise<Result<void, SetupSkillInstallError>>;
