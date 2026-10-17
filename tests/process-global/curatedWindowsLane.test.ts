@@ -83,6 +83,17 @@ describe("curated Windows test lane", () => {
     );
   });
 
+  it("keeps native path admission and split APK extraction in the lane", async () => {
+    // Both run the native private runtime root on Windows: drive-spelling
+    // normalization (#4707) and split-container extraction workspaces.
+    expect(await explicitPaths("windows")).toEqual(
+      expect.arrayContaining([
+        "tests/boundary/filesystem/windowsPathAdmission.test.ts",
+        "src/application/android/AndroidInputContainerAdmission.test.ts",
+      ]),
+    );
+  });
+
   it("keeps Windows runner cancellation coverage in the lane", async () => {
     expect(await explicitPaths("windows")).toEqual(
       expect.arrayContaining([
